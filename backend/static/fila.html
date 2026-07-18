@@ -92,7 +92,7 @@ function render(){
       <span class="dot ${i.urgencia}"></span>
       <span class="quando">${quando}</span>
       <span class="corpo">
-        <span class="cli">${i.cliente_nome}</span> — ${i.descricao}
+        <a class="cli" href="/cliente.html?doc=${i.cliente}">${i.cliente_nome}</a> — ${i.descricao}
         <div class="passo">${i.proximo_passo}</div>
         <div class="base">${i.base_legal||""} ${i.referencia?`· ${i.referencia}`:""} ${i.status!=='aberto'?`· <b>${i.status}</b>`:""}</div>
       </span>
