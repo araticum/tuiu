@@ -25,6 +25,29 @@ def cockpit():
     return montar_cockpit()
 
 
+@app.get("/api/prestacao/{cnpj}")
+def prestacao(cnpj: str):
+    from app.prestacao import checklist
+    return checklist(cnpj)
+
+
+@app.get("/api/relatorio-gestao-pix/{cnpj}")
+def relatorio_pix(cnpj: str, formato: str = "json"):
+    from fastapi.responses import PlainTextResponse
+
+    from app.prestacao import markdown_relatorio, relatorio_gestao_pix
+    dados = relatorio_gestao_pix(cnpj)
+    if formato == "md":
+        return PlainTextResponse(markdown_relatorio(dados), media_type="text/markdown; charset=utf-8")
+    return dados
+
+
+@app.get("/api/dossie/{cnpj}")
+def dossie_listar(cnpj: str, instrumento: str | None = None):
+    from app.dossie import listar
+    return listar(cnpj, instrumento)
+
+
 @app.get("/api/verificacao")
 def verificacao():
     snap = snapshot_mais_recente()

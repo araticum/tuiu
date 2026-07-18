@@ -214,11 +214,11 @@ certidões, com histórico) · `regras_normativas` (parâmetro, valor, vigência
 | Peça | Uso no Tuiú |
 |---|---|
 | Pipeline ingest Veredas + cadeia xyops | cargas diárias g2/CSV, mesma disciplina serial do PNCP |
-| Sargaço | dossiê documental por instrumento (guarda 5/10 anos) |
-| candeia-a1 + step-up TOTP | assinatura ICP-Brasil de ofícios/planos/relatórios |
-| Seriema (WhatsApp/Telegram/voz) | alertas de prazo e diff de CAUC |
-| Buriti + pdf-render | relatório executivo timbrado, plano de trabalho, ofícios |
-| Compêndio IA (DeepSeek + freio de custo) | leitura de programas, rascunho de plano, Q&A normativo |
+| ~~Sargaço~~ | **fora** — dossiê é pasta local (`data/dossies/`), simples |
+| ~~candeia-a1~~ | **fora** — sem assinatura A1 nesta fase |
+| **Seriema** | **IMPORTADO** para `backend/app/seriema.py` (HMAC v1, sessão WhatsApp própria) — alertas e eventos |
+| ~~Buriti + pdf-render~~ | **fora** — saída em markdown/HTML (colar ou imprimir) |
+| ~~Compêndio IA~~ | **fora** — F4 cortada |
 | doc-extractor (Playwright, fail-safe, host BR) | CAUC via `sti.tesouro.gov.br` + certidões |
 | Framework de renovação da Habilitação | monitor de certidões do ente (TCU/Falimentar já ao vivo) |
 | Tamanduá (multi-tenant + SMTP) | tenancy na F5 |
@@ -241,8 +241,8 @@ contrato.
 | **F1.5 — Motor de eventos** | diff D-1 do andamento (situação/empenho/OP/relatório) → `eventos` → notificação por canal plugável (outbox/webhook/WhatsApp Cloud API própria). É o "webhook" seguro (sem credencial gov.br de terceiros — a impersonação foi descartada) | mudança real de andamento vira evento + POST de webhook + payload WhatsApp (validado ponta a ponta) |
 | **F1.6 — Inbox parser** | reencaminho das notificações por e-mail do Transferegov → IMAP → parser (allowlist de remetente, extrai instrumento/tipo/prazo, ignora link/injeção) → mesmos `eventos`/notificador. Cobre o recado privado que o diff D-1 não vê | e-mail legítimo vira evento atribuído ao ente; phishing/injeção fica `suspeito` sem notificar (testado) |
 | **F2 — Regularidade** | CAUC diário (doc-extractor) + certidões (reuso Habilitação); semáforo, diff-alert, histórico | item que vira pendente gera WhatsApp em ≤24h, com evidência guardada |
-| **F3 — Cockpit & contas** | dossiê Sargaço, checklist por regime, wizard do Relatório de Gestão Pix, relatório executivo PDF timbrado assinado A1 | um instrumento real gerido ponta a ponta; relatório assinado entregue |
-| **F4 — IA** | resumo de programa, rascunho de plano de trabalho validado (quantitativo/espec./local), Q&A normativo — atrás do freio de custo | rascunho de plano de programa real aprovado pelo dono |
+| **F3 — Cockpit & contas** | cockpit unificado; **checklist de prestação por regime** (base legal por item); **wizard do Relatório de Gestão Pix** (rascunho pronto p/ protocolar); **dossiê = pasta local** (sha256 + prazo de guarda). Sem Sargaço/pdf-render/A1 (decisão 18/07) | um instrumento real gerido ponta a ponta; rascunho do relatório entregue em markdown |
+| ~~F4 — IA~~ | **cortada (18/07)** — valor está no motor de regras determinístico, não em geração de texto paga | — |
 | **F5 — SaaS** | multi-tenant (tamanduá), onboarding, billing Ariranha, preço público, DPA/LGPD formal, stack `tuiu` PRÓPRIO no araticum **com instância Seriema própria** (liga a outbox da F1 ao WhatsApp real) | 2 tenants pagantes isolados em produção, com alertas chegando no celular |
 | **F6 — opcionais** | credenciamento compras/obras (ofício DTPAR) se cliente exigir; vigília normativa automatizada (DOU/comunicados); módulo obras (CIPI/medições); radar p/ mandatos | por demanda |
 
@@ -280,12 +280,28 @@ novas conforme o ingest avança (CAUC/detru na F2), e só vira superfície de pr
   3. **Ecos da Natureza/SP** — OSC `20.069.629/0001-03`: 20 propostas com estados ricos (Em Elaboração/Em Análise/Em Captação/Em Execução/Rejeitada). Exercita MROSC, estados não-felizes e a fronteira "OSC não recebe Pix" (confirmado: zero planos).
   - Lacuna assumida: contrato de repasse com OBRA (regime completo) não aparece na g2 — conferir no ingest do CSV detru se Águas Lindas cobre no legado; senão, promover um 4º ente só para esse caminho. Consórcios foram descartados com dados (36 entes na g2, nenhum com cadeia financeira).
 
+- **Ordem de segmento (fechada 18/07)**: **(1) prefeituras pequenas e médias** —
+  é onde a dor é aguda e mensurável (no dogfood: 20 prestações vencidas, 8 planos
+  Pix impedidos, 25 relatórios de gestão ausentes com multa de 1%/dia). **(2)
+  assessorias/consultorias de captação como CANAL** (um contrato → N entes,
+  mesmo produto, sem custo de aquisição por município). **(3) OSCs depois** —
+  ciclo MROSC mais simples e ticket menor. **Consórcios saem da lista de alvo
+  inicial** e viram canal: o dado mostrou que quase não operam instrumento
+  próprio (36 na g2, nenhum com cadeia financeira).
+- **Escopo simples (18/07)**: **sem Sargaço, sem pdf-render, sem assinatura A1**.
+  Dossiê = pasta local com sha256 e prazo de guarda; saída de documento =
+  markdown/HTML que o usuário cola ou imprime. **Notificação = Seriema
+  importado** para dentro do Tuiú (`backend/app/seriema.py`, HMAC v1 contra
+  sessão WhatsApp própria) — nunca a instância de produção do oasis.v2.
+- **F4 (IA) cortada**: resumo de programa, rascunho de plano de trabalho e Q&A
+  normativo via DeepInfra saem do roadmap. O valor está no motor de regras e
+  nos prazos, que são determinísticos e auditáveis — não em geração de texto paga.
+
 **A travar:**
-1. Ordem de segmento: prefeituras+consórcios primeiro (recomendado) vs OSCs vs assessorias.
-2. Lake: recorte por tenant no araticum (recomendado) vs lake nacional no Carcará desde já.
-3. Pricing final e se o preço vai público no site (recomendado: sim).
-4. Marca do produto (nome de fachada ≠ codinome) e domínio.
-5. F6 compras/obras: pedir credenciamento à DTPAR cedo (fila burocrática) ou só sob demanda.
+1. Lake: recorte por tenant no araticum (recomendado) vs lake nacional no Carcará desde já.
+2. Pricing final e se o preço vai público no site (recomendado: sim).
+3. Marca do produto (nome de fachada ≠ codinome) e domínio.
+4. F6 compras/obras: pedir credenciamento à DTPAR cedo (fila burocrática) ou só sob demanda.
 
 ## 11. Fontes principais (verificadas 17/07/2026)
 
