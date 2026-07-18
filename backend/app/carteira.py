@@ -97,6 +97,11 @@ def listar_entes() -> dict:
         carteira = json.loads(cj.read_text(encoding="utf-8"))
         carteira["rotulo"] = ROTULOS.get(carteira.get("cnpj", sub.name), carteira.get("nome"))
         carteira["legado"] = _legado(sub)
+        reg = sub / "regularidade.json"
+        carteira["regularidade"] = (
+            json.loads(reg.read_text(encoding="utf-8")) if reg.exists()
+            else {"disponivel": False, "motivo": "ainda não coletado"}
+        )
         entes.append(carteira)
     ordem = list(ROTULOS)
     entes.sort(key=lambda e: ordem.index(e["cnpj"]) if e["cnpj"] in ordem else 99)

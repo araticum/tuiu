@@ -85,6 +85,15 @@ fetch("/api/entes").then(r=>r.json()).then(({snapshot, entes})=>{
         ${imped.slice(0,3).map(i=>`<div class="sub" style="margin-top:5px">🔴 <span class="mono">${i.codigo}</span> (${i.ano}) — ${(i.motivo||i.situacao||"").slice(0,110)}${(i.motivo||"").length>110?"…":""}</div>`).join("")}
       </div>
 
+      <div class="sec"><b class="t">Regularidade (CAUC)</b>
+        <div class="kv">
+          ${(e.regularidade&&e.regularidade.disponivel)
+            ? `<span>vínculo <b>id ${e.regularidade.ente_cauc.id}</b></span><span>extrato: ${e.regularidade.extrato.estado==="pendente_captcha"?'<span style="color:var(--dim)">captcha — via doc-extractor</span>':e.regularidade.extrato.estado}</span>`
+            : `<span style="color:var(--dim)">${(e.regularidade&&e.regularidade.motivo)||"não coletado"}</span>`}
+        </div>
+        <div class="sub" style="margin-top:4px">IN STN/MF 8/2025 — 26 itens</div>
+      </div>
+
       <div class="sec"><b class="t">Legado SICONV (2008→)</b>
         <div class="kv">
           <span>instrumentos <b>${lg.instrumentos||0}</b></span>

@@ -76,6 +76,7 @@ def main():
         if not args.sem_detru:
             _refresh_detru(fh)
             _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
+        _passo(fh, "regularidade CAUC", [py, "ingest/cauc/coletar_cauc.py"])
         _passo(fh, "motor de prazos (marcos + alertas)", [py, "backend/app/motor_prazos.py"])
         if not args.sem_radar:
             _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"])
