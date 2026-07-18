@@ -95,13 +95,20 @@ quase todo ano; cada linha carrega base legal + vigência):
 | Emendas Pix: fluxo do plano | complementação 30d, parecer 60d, reenvio 30d | PC MGI/MF 2/2025 art. 3º |
 | Emendas Pix: multa | 1%/dia sem plano/relatório (estoque 2020–2024) | IN TCU 93/2024 |
 | LDO 2026: piso de pagamento | 65% de RP6+RP7 até 30/06/2026 | Lei 15.321/2025 |
+| **Prestação de contas — apresentação** | **60 dias** do fim da vigência, conclusão do objeto, denúncia ou rescisão (o que vier antes); sem envio → notificação com +45 dias; persistindo → inadimplência registrada + devolução em 30 dias + TCE | PC 33 arts. 96 e 91 (confirmado no texto integral) |
+| **Prestação de contas — análise** | 60 dias no procedimento informatizado (conta da atribuição da **nota de risco**) ou 180 dias no convencional (conta do envio; suspende na complementação) — ambos prorrogáveis por igual período; saneamento de impropriedades: **30 dias** (era 45 — PC 45/2026); registro do recebimento em 15 dias | PC 33 arts. 97, 98 §2º |
+| Devolução de saldos remanescentes | 30 dias improrrogáveis (fim de vigência/conclusão/denúncia/rescisão); rejeição total/parcial → devolver o valor rejeitado em 30 dias da notificação | PC 33 arts. 95 §1º, 103 §4º |
 | CAUC | 26 itens (7 novos: precatórios, SIAFIC, transparência, Fundeb) | IN STN/MF 8/2025 (vigor 17/02/2025) |
 | PNCP p/ municípios ≤20 mil hab. | prazo de adaptação expira 01/04/2027 | 14.133 art. 176 |
 | RP6 / RP7 | 2% RCL (metade saúde) / 1% RCL | ECs 86/100/126 |
 
-⚠ A confirmar no texto integral antes de cravar default: prazo supletivo de apresentação da prestação de
-contas na PC 33/2023 (é cláusula obrigatória do instrumento — art. 35, XXX; o valor default por regime
-precisa de leitura do DOU) e números exatos das PCs "45/2026"/"46/2026".
+Confirmado em fonte primária (17-18/07/2026): **PC MGI/MF/CGU 45/2026** (10/07, DOU 15/07/2026 ed. 131-B)
+altera a PC 33/2023 — inclui a cláusula PNCP (art. 12, X, "d"), projetos padronizados, razoabilidade do
+plano de trabalho (veda descrição genérica), vistoria por amostragem e **saneamento 45→30 dias** (art. 97,
+§3º). **PC MGI/MF/CGU 46/2026** (10/07, DOU 15/07/2026) altera a PC 28/2024 — migração ao simplificado por
+termo aditivo (celebrados desde 01/04/2021, valor vigente na data da migração), parcela única sem
+"preferencialmente", liberação em ≤45 dias p/ instrumentos só de equipamentos. Publicadas na semana
+anterior a este plano — retrato vivo da cadência de mutação que o motor de regras precisa absorver.
 
 **"Legais" no escopo**: transferências automáticas (PNAE, PNATE, PDDE — sistemas do FNDE) e fundo a fundo
 (SUS/SUAS) rodam majoritariamente FORA do fluxo de convênios; o módulo oficial as agrega no painel. O
@@ -243,7 +250,6 @@ sobrescrever.
 | ERPs incumbentes acordarem | velocidade + nicho + preço público + WhatsApp/A1 (integrações que eles não têm) |
 | Dado é D-1 (carga ~09h), não real-time | `data_atualizacao` sempre visível; comunicação honesta |
 | Dados bancários de executores na API pública | minimizar/mascarar; gate PRIVACY.md |
-| Prazo default de prestação de contas (PC 33) não confirmado | ler texto integral no DOU antes da F1; até lá, prazo vem da cláusula do instrumento (campo editável) |
 | Equipe = 1 dev | fases enxutas, reuso máximo (§7), cada fase vendável sozinha |
 | MultiEntes muda o jogo até 2028 | é oportunidade (mais entes na plataforma); acompanhar pilotos RN/AC/BA/RR |
 
@@ -252,14 +258,18 @@ sobrescrever.
 **Travadas (dono, 17/07/2026):**
 - Codinome: **Tuiú**.
 - Repo próprio **`araticum/tuiu`** (plano versionado aqui; peças do oasis.v2 como doadoras).
+- **Dogfood da F0 — 3 entes** (escolhidos por utilidade, cruzando o dump nacional da g2 `/parcerias` com os 57.827 planos de ação especiais da g1, 17/07/2026):
+  1. **Águas Lindas de Goiás/GO** — prefeitura `01.616.520/0001-96` (16 planos Pix, 2 impedidos) + FMS `07.460.294/0001-83` (41 propostas, 14 programas, cadeia NE→DH→OP completa, 372 lançamentos de extrato). Exercita cadeia financeira profunda, radar multi-programa e o gotcha **1 ente = N CNPJs**.
+  2. **Cutias/AP** — `34.925.198/0001-36` (~6 mil hab): 40 planos Pix 2020→2026 (estoque ADPF 854 + ciclo atual), 6 impedimentos/rejeições, 18 propostas em parcerias. Exercita o cliente-alvo típico, impedimentos, Amazônia Legal (PC 84/2025) e ≤20 mil hab (PNCP art. 176).
+  3. **Ecos da Natureza/SP** — OSC `20.069.629/0001-03`: 20 propostas com estados ricos (Em Elaboração/Em Análise/Em Captação/Em Execução/Rejeitada). Exercita MROSC, estados não-felizes e a fronteira "OSC não recebe Pix" (confirmado: zero planos).
+  - Lacuna assumida: contrato de repasse com OBRA (regime completo) não aparece na g2 — conferir no ingest do CSV detru se Águas Lindas cobre no legado; senão, promover um 4º ente só para esse caminho. Consórcios foram descartados com dados (36 entes na g2, nenhum com cadeia financeira).
 
 **A travar:**
-1. Quais 3 entes reais para dogfood na F0 (sugestão: municípios-alvo comerciais da Araticum).
-2. Ordem de segmento: prefeituras+consórcios primeiro (recomendado) vs OSCs vs assessorias.
-3. Lake: recorte por tenant no araticum (recomendado) vs lake nacional no Carcará desde já.
-4. Pricing final e se o preço vai público no site (recomendado: sim).
-5. Marca do produto (nome de fachada ≠ codinome) e domínio.
-6. F6 compras/obras: pedir credenciamento à DTPAR cedo (fila burocrática) ou só sob demanda.
+1. Ordem de segmento: prefeituras+consórcios primeiro (recomendado) vs OSCs vs assessorias.
+2. Lake: recorte por tenant no araticum (recomendado) vs lake nacional no Carcará desde já.
+3. Pricing final e se o preço vai público no site (recomendado: sim).
+4. Marca do produto (nome de fachada ≠ codinome) e domínio.
+5. F6 compras/obras: pedir credenciamento à DTPAR cedo (fila burocrática) ou só sob demanda.
 
 ## 11. Fontes principais (verificadas 17/07/2026)
 
