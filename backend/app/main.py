@@ -14,9 +14,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.carteira import listar_entes, snapshot_mais_recente
+from app.cockpit import montar as montar_cockpit
 from app.db import conectar
 
-app = FastAPI(title="Tuiú", version="0.1.0-f1")
+app = FastAPI(title="Tuiú", version="0.2.0-cockpit")
+
+
+@app.get("/api/cockpit")
+def cockpit():
+    return montar_cockpit()
 
 
 @app.get("/api/saude")
