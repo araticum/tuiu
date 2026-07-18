@@ -87,6 +87,8 @@ def main():
         if os.environ.get("TUIU_IMAP_HOST"):
             _passo(fh, "inbox (e-mail -> eventos)", [py, "ingest/inbox/coletar_inbox.py"])
         _passo(fh, "notificador (outbox/webhook/whatsapp)", [py, "backend/app/notificador.py"])
+        # cadência mensal: o próprio script só age no dia 1º
+        _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:
             _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"])
         _log(fh, "=== cadeia concluída ===")

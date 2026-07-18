@@ -133,6 +133,26 @@ def montar(apenas_abertos: bool = True, cliente: str | None = None,
 
     if apenas_clientes:
         itens = [i for i in itens if i["e_cliente"]]
+
+    # Marca quando cada item apareceu — é o relógio que permite medir tempo de
+    # resolução (fila_status só guarda a última mexida). Registra DEPOIS do
+    # filtro de clientes (contraparte não é trabalho da casa e contaminaria a
+    # métrica) e ANTES do filtro de abertos (item resolvido continua contando
+    # para o histórico). Idempotente: só a primeira aparição conta.
+    if itens:
+        try:
+            with conectar() as con:
+                for it in itens:
+                    con.execute(
+                        "INSERT INTO fila_visto (chave, cliente, tipo, urgencia)"
+                        " VALUES (%s,%s,%s,%s)"
+                        " ON CONFLICT (chave) DO UPDATE SET ultima_vez=now(),"
+                        " urgencia=EXCLUDED.urgencia",
+                        (it["chave"], it["cliente"], it["tipo"], it["urgencia"]))
+                con.commit()
+        except Exception:  # noqa: BLE001 — medir não pode derrubar a fila
+            pass
+
     if apenas_abertos:
         itens = [i for i in itens if i["status"] in ("aberto", "em_andamento")]
 

@@ -42,6 +42,15 @@ def fila_triar(payload: dict):
                  payload.get("nota"), payload.get("operador"))
 
 
+@app.get("/api/produtividade")
+def produtividade(dias: int = 30, cliente: str | None = None):
+    try:
+        from app.produtividade import montar
+        return {"disponivel": True, **montar(dias, cliente)}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc)}
+
+
 @app.get("/api/relatorio/{doc}")
 def relatorio(doc: str, dias: int = 30, formato: str = "md"):
     from fastapi.responses import PlainTextResponse
