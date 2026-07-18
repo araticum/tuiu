@@ -1,0 +1,10 @@
+# dados extraídos (dumps da API) — nunca versionar
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# ambiente
+.env
