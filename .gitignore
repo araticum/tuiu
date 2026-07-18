@@ -8,3 +8,6 @@ __pycache__/
 
 # ambiente
 .env
+
+# logs de execução
+ops/logs/

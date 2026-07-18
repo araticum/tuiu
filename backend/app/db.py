@@ -14,6 +14,26 @@ from pathlib import Path
 import psycopg
 
 RAIZ = Path(__file__).resolve().parents[2]
+
+
+def _carregar_env() -> None:
+    """Lê RAIZ/.env (gitignored) para os.environ. Env explícito vence o arquivo.
+    Sem dependência externa; segredos ficam só no .env / cofre, nunca no git."""
+    arq = RAIZ / ".env"
+    if not arq.exists():
+        return
+    for linha in arq.read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        chave, _, valor = linha.partition("=")
+        chave = chave.strip()
+        valor = valor.strip().strip('"').strip("'")
+        os.environ.setdefault(chave, valor)
+
+
+_carregar_env()
+
 DSN = os.environ.get("TUIU_DSN", "postgresql://postgres@localhost:5432/tuiu")
 
 
