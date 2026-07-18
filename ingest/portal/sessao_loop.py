@@ -192,8 +192,20 @@ def rodar(uma_vez: bool = False, headless: bool = True) -> int:
                 if r == "SESSAO_CAIU":
                     # Fim da vida útil da sessão: é ISTO que a premissa mede.
                     horas = ESTADO_SESSAO.idade_horas()
+                    meta = ESTADO_SESSAO.ler_meta()
                     _auditar({"acao": "sessao_expirou", "idade_horas": horas,
-                              "salvamentos": ESTADO_SESSAO.ler_meta().get("salvamentos")})
+                              "salvamentos": meta.get("salvamentos")})
+                    # registro permanente da premissa: quanto durou cada sessão
+                    hist = RAIZ / "data" / "sessao" / "duracoes.jsonl"
+                    hist.parent.mkdir(parents=True, exist_ok=True)
+                    with open(hist, "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({
+                            "bootstrap_em": meta.get("bootstrap_em"),
+                            "expirou_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                            "duracao_horas": horas, "duracao_dias": round((horas or 0) / 24, 2),
+                            "manutencoes": meta.get("salvamentos"),
+                            "keepalive_s": KEEPALIVE_S,
+                        }, ensure_ascii=False) + "\n")
                     _notificar("sessão expirou",
                                f"A sessão durou {horas} h sob keepalive automático. "
                                "Precisa de novo bootstrap (login humano — o gov.br "
@@ -268,13 +280,39 @@ def conectividade() -> int:
     return 0 if ok else 1
 
 
+def status() -> int:
+    """Saúde da sessão e a medida da premissa (quanto tempo ela já se sustenta).
+    Funciona com qualquer storage_state presente no volume."""
+    meta = ESTADO_SESSAO.ler_meta()
+    presente = ESTADO_SESSAO.existe()
+    idade = ESTADO_SESSAO.idade_horas()
+    print(f"sessão no volume : {'SIM' if presente else 'NÃO — falta bootstrap'}")
+    if presente:
+        print(f"cookies          : {meta.get('cookies', '?')}")
+        print(f"bootstrap em     : {meta.get('bootstrap_em', '?')}")
+        print(f"idade            : {idade} h ({round((idade or 0)/24, 2)} dias)")
+        print(f"manutenções      : {meta.get('salvamentos', 0)} (keepalive + ciclos)")
+        print(f"último save      : {meta.get('salvo_em', '?')}")
+    # histórico de expirações já medidas
+    hist = RAIZ / "data" / "sessao" / "duracoes.jsonl"
+    if hist.exists():
+        print("\nsessões já medidas (duração até expirar):")
+        for l in hist.read_text(encoding="utf-8").splitlines()[-10:]:
+            print("  ", l)
+    return 0 if presente else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    ap.add_argument("--status", action="store_true",
+                    help="saúde da sessão e quanto tempo ela ja se sustenta")
     ap.add_argument("--uma-vez", action="store_true")
     ap.add_argument("--conectividade", action="store_true",
                     help="diagnostico sem certificado (chromium, rede, banco, guardas)")
     ap.add_argument("--com-janela", action="store_true", help="não-headless (depuração)")
     args = ap.parse_args()
+    if args.status:
+        sys.exit(status())
     if args.conectividade:
         sys.exit(conectividade())
     sys.exit(rodar(uma_vez=args.uma_vez, headless=not args.com_janela))
