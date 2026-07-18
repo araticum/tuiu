@@ -14,14 +14,23 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# só o necessário para ler e avisar (psycopg p/ eventos; cryptography p/ validade do A1)
-RUN pip install --no-cache-dir "psycopg[binary]==3.3.3" cryptography
+# A imagem base traz os BINÁRIOS dos navegadores em /ms-playwright, mas não o
+# pacote Python do Playwright — por isso ele é instalado aqui, na mesma versão
+# dos binários (1.59.0), senão o cliente reclama de versão.
+# psycopg p/ gravar eventos; cryptography p/ ler a validade do A1.
+RUN pip install --no-cache-dir --break-system-packages \
+        "playwright==1.59.0" "psycopg[binary]==3.3.3" cryptography
 
 # código: apenas os módulos de leitura/notificação (nada de assinatura)
 COPY backend/app/ /app/backend/app/
 COPY ingest/portal/ /app/ingest/portal/
 
-RUN useradd -m -u 10001 leitor && chown -R leitor:leitor /app
+# A pasta de saída precisa EXISTIR e ser do `leitor` já no build: um volume
+# nomeado herda a dona do diretório da imagem: se ela não existir, o volume
+# nasce como root e o container (não-root) não consegue escrever.
+RUN mkdir -p /app/data/sessao \
+    && useradd -m -u 10001 leitor \
+    && chown -R leitor:leitor /app
 USER leitor
 
 # Sem porta exposta: o container não serve nada, só lê e avisa.
