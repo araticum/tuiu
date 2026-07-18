@@ -32,6 +32,16 @@ REMETENTES_OK = set(
     ).split(",") if d.strip()
 )
 
+# Gate de relevância: mesmo de remetente confiável, o e-mail só vira evento se
+# for SOBRE o Transferegov (tem instrumento OU um destes termos). Resolve o
+# achado do `serpro.gov.br` — domínio de infra que também manda FGTS etc.
+RELEVANTE_TERMOS = (
+    "transferegov", "convenio", "contrato de repasse", "plano de acao",
+    "prestacao de contas", "termo de fomento", "termo de colaboracao",
+    "plano de trabalho", "instrumento", "parceria", "emenda parlamentar",
+    "transferencia especial", "diligencia", "concedente", "convenente",
+)
+
 # CALIBRAR: baldes de classificação por palavra-chave (sem acento, minúsculo).
 BALDES = [
     ("diligencia", ("diligencia",)),
@@ -122,12 +132,17 @@ def parse_email(raw: bytes) -> dict:
     cnpjs = sorted({re.sub(r"\D", "", c) for c in _RE_CNPJ.findall(corpo) if len(re.sub(r"\D", "", c)) == 14})
     to = parseaddr(_decodifica(msg.get("Delivered-To") or msg.get("To")))[1].lower()
 
+    instrumentos = _instrumentos(corpo)
+    tem_instrumento = any(instrumentos.values())
+    alvo_rel = _sem_acento(assunto + " " + corpo_sem_link)
+    relevante = tem_instrumento or any(t in alvo_rel for t in RELEVANTE_TERMOS)
+
     return {
         "message_id": (msg.get("Message-ID") or "").strip() or f"sem-id:{hash((remetente, assunto, data))}",
-        "remetente": remetente, "confiavel": confiavel,
+        "remetente": remetente, "confiavel": confiavel, "relevante": relevante,
         "assunto": assunto, "data": data, "para": to,
         "tipo": _classificar(assunto, corpo),
-        "instrumentos": _instrumentos(corpo),
+        "instrumentos": instrumentos,
         "cnpjs": cnpjs,
         "prazos": sorted(set(_RE_DATA.findall(corpo_sem_link))),
         "links_removidos": len(links),
@@ -140,5 +155,6 @@ if __name__ == "__main__":
     for caminho in sys.argv[1:]:
         with open(caminho, "rb") as fh:
             p = parse_email(fh.read())
-        print(f"[{'OK' if p['confiavel'] else 'SUSPEITO'}] {p['remetente']} | {p['tipo']} | "
+        rot = "OK" if p["confiavel"] and p["relevante"] else ("IRRELEVANTE" if p["confiavel"] else "SUSPEITO")
+        print(f"[{rot}] {p['remetente']} | {p['tipo']} | "
               f"{p['assunto'][:60]} | instr={p['instrumentos']} | cnpj={p['cnpjs']} | prazos={p['prazos']}")

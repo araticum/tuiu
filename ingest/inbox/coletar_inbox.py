@@ -74,6 +74,8 @@ def _rotulo(p: dict) -> str:
 def registrar(con, p: dict, entes: dict[str, str]) -> str:
     if not p["confiavel"]:
         return "suspeito"
+    if not p.get("relevante", True):
+        return "irrelevante"  # remetente ok, mas não é sobre Transferegov (ex.: FGTS)
     ja = con.execute("SELECT 1 FROM eventos WHERE origem='inbox' AND chave=%s", (p["message_id"],)).fetchone()
     if ja:
         return "duplicado"
