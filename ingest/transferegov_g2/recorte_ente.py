@@ -183,8 +183,12 @@ def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
         for pt in pts if pt.get("data_fim_execucao_plano_trabalho")
     ]
 
+    ibge = (next((p.get("cd_ibge_recebedor") for p in props if p.get("cd_ibge_recebedor")), None)
+            or next((b.get("cd_ibge_beneficiario_emenda") for b in emendas_rows
+                     if b.get("cd_ibge_beneficiario_emenda")), None))
     cj = {
-        "cnpj": cnpj, "nome": nome, "uf": uf, "municipio": mun, "data_atualizacao_api": dt_api,
+        "cnpj": cnpj, "nome": nome, "uf": uf, "municipio": mun, "ibge": ibge,
+        "data_atualizacao_api": dt_api,
         "parcerias": {
             "propostas": len(props), "por_situacao": dict(sit_prop),
             "instrumentos": len(r.get("parceria", [])), "instrumentos_por_situacao": dict(sit_parc),
