@@ -34,6 +34,34 @@ import sessao_estado as E  # noqa: E402
 from sessao_operador import LEITURAS, _parece_login  # noqa: E402
 
 ALVO = "https://discricionarias.transferegov.sistema.gov.br/"
+HOST_ALVO = "discricionarias.transferegov.sistema.gov.br"
+
+# Marcas que só aparecem em tela de LOGIN. Se qualquer uma estiver presente,
+# não estamos autenticados — por mais que a URL pareça certa.
+MARCAS_LOGIN = ("entrar com gov.br", "acesse sua conta", "identifique-se no gov.br",
+                "seu certificado digital", "login do transferegov", "digite seu cpf")
+
+
+def esta_autenticado(p) -> tuple[bool, str]:
+    """Evidência POSITIVA de sessão. Checar só 'não parece login' dá falso
+    positivo durante o redirect (visto na prática: 'sessão capturada' sem
+    login nenhum). Aqui exigimos: terminar no host alvo, com a rede quieta,
+    e sem nenhuma marca de tela de login no corpo."""
+    from urllib.parse import urlparse
+    try:
+        p.goto(ALVO, wait_until="networkidle", timeout=60000)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"navegação falhou: {type(exc).__name__}"
+    host = urlparse(p.url).netloc
+    if host != HOST_ALVO:
+        return False, f"terminou em {host} (esperado {HOST_ALVO})"
+    corpo = (p.inner_text("body") or "").lower()
+    for marca in MARCAS_LOGIN:
+        if marca in corpo:
+            return False, f"tela de login detectada ('{marca}')"
+    if len(corpo.strip()) < 200:
+        return False, "página vazia demais para ser a área autenticada"
+    return True, "área autenticada"
 
 
 def main():
@@ -56,21 +84,23 @@ def main():
         limite = time.time() + args.espera_max
         autenticado = False
         while time.time() < limite:
-            time.sleep(5)
-            try:
-                if not _parece_login(p.url, p.title()):
-                    # confirma acessando a área alvo
-                    p.goto(ALVO, wait_until="domcontentloaded", timeout=45000)
-                    time.sleep(3)
-                    if not _parece_login(p.url, p.title()):
-                        autenticado = True
-                        break
-            except Exception:  # noqa: BLE001 — janela pode estar navegando
-                continue
-            print(f"  aguardando login… ({int(limite - time.time())}s)")
+            time.sleep(10)
+            ok, motivo = esta_autenticado(p)
+            if ok:
+                autenticado = True
+                print(f"\n  {motivo} — confirmando…")
+                time.sleep(3)
+                ok2, motivo2 = esta_autenticado(p)   # dupla confirmação
+                if not ok2:
+                    autenticado = False
+                    print(f"  confirmação falhou ({motivo2}) — seguindo espera")
+                    continue
+                break
+            print(f"  aguardando login… ({int(limite - time.time())}s restantes) — {motivo}")
 
         if not autenticado:
-            print("\nNão detectei a área autenticada. Nada foi salvo.")
+            print("\nNão detectei a área autenticada. NADA foi salvo "
+                  "(melhor sem sessão do que com sessão falsa).")
             nav.close()
             return 1
 
