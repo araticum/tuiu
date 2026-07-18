@@ -1,0 +1,61 @@
+# Fortaleza do A1: o container que LÊ o Transferegov e não assina nada.
+#
+# Princípios materializados aqui:
+#   - certificado montado READ-ONLY, nunca copiado para a imagem;
+#   - PIN via docker secret (arquivo), não em variável dumpável de imagem;
+#   - sem portas publicadas (o container não serve nada);
+#   - sem privilégios extras, filesystem raiz somente-leitura, sem escalonamento;
+#   - o que ele escreve fica em um volume próprio (auditoria e estado).
+#
+# Subir:  docker compose -f ops/sessao/compose.yaml up -d --build
+# Parar:  docker compose -f ops/sessao/compose.yaml down     (kill switch)
+
+services:
+  sessao:
+    build:
+      context: ../..
+      dockerfile: ops/sessao/Dockerfile
+    container_name: tuiu-sessao
+    restart: unless-stopped
+
+    environment:
+      TUIU_SESSAO_ATIVA: "1"
+      TUIU_A1_PFX: /segredos/a1.pfx
+      TUIU_A1_SENHA_ARQUIVO: /run/secrets/a1_pin
+      TUIU_SESSAO_KEEPALIVE_S: "900"    # 15 min — só mantém a sessão viva
+      TUIU_SESSAO_LEITURA_S: "2700"     # 45 min — leitura + diff
+      TUIU_SESSAO_MAX_CEGO: "3"         # 3 ciclos cegos => alarme
+      TUIU_DSN: ${TUIU_DSN:-postgresql://postgres@host.docker.internal:5432/tuiu}
+      TUIU_SERIEMA_BASE_URL: ${TUIU_SERIEMA_BASE_URL:-}
+      TUIU_SERIEMA_SECRET: ${TUIU_SERIEMA_SECRET:-}
+      TUIU_SERIEMA_GROUP_ID: ${TUIU_SERIEMA_GROUP_ID:-}
+      TUIU_WEBHOOK_URL: ${TUIU_WEBHOOK_URL:-}
+
+    secrets:
+      - a1_pin
+
+    volumes:
+      # o A1 entra READ-ONLY e sai do container quando ele morre
+      - ${TUIU_A1_PFX_HOST:?defina TUIU_A1_PFX_HOST com o caminho do .pfx}:/segredos/a1.pfx:ro
+      - sessao_dados:/app/data/sessao
+
+    # postura de segurança
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+      - /app/data/sessao/tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # sem `ports:` — este container não serve nada a ninguém
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+secrets:
+  a1_pin:
+    file: ${TUIU_A1_PIN_FILE:?defina TUIU_A1_PIN_FILE com o arquivo do PIN}
+
+volumes:
+  sessao_dados:

@@ -50,6 +50,53 @@ estiver autenticada, ele avisa e para.
 Saída em `data/sessao/<data>/` (texto, HTML e estrutura na descoberta) +
 `auditoria.jsonl` com cada navegação. Nada disso é versionado.
 
+## Modo container com A1 (leitura no mesmo dia, sem depender do D-1)
+
+**Fronteira travada com o dono (18/07): o certificado serve só para LOGIN.
+Nada é assinado com ele.** O objetivo é puxar no mesmo dia a mudança de estado
+dos representados — nenhuma ação é tomada.
+
+### A fortaleza em volta do A1
+
+| Camada | O que faz valer |
+|---|---|
+| `auth_certificado.py` | única peça que vê o certificado; entrega um contexto autenticado e **não importa nenhuma API de assinatura** |
+| `sessao_loop.py` / `sessao_operador.py` | leem; **não existe** clique, preenchimento, envio ou upload no código (verificável por grep) |
+| `Dockerfile` | usuário não-root; **não copia** o certificado para a imagem; não instala nada de assinatura |
+| `compose.yaml` | `.pfx` montado **`:ro`**; PIN via **docker secret** (arquivo), não em env de imagem; `read_only: true`; `cap_drop: ALL`; `no-new-privileges`; **sem portas publicadas** |
+| cofre | PIN em `TUIU_A1_SENHA` (DPAPI) ou arquivo montado em runtime — nunca em código |
+
+### Cadência (sessão longa > re-login)
+
+- keepalive a cada **15 min** (toque leve, só para a sessão não cair);
+- leitura + diff a cada **45 min**;
+- **reautenticação só quando a sessão cai de fato** — não há re-login por
+  relógio. É o que menos pesa para a plataforma e menos chama anti-bot.
+
+### Três estados, não dois
+
+`OK_SEM_MUDANCA` · `OK_MUDOU` · **`CEGO`**. O terceiro existe porque "não
+consegui ler" mascarado de "nada mudou" é falso conforto: depois de
+`TUIU_SESSAO_MAX_CEGO` ciclos cegos o sistema **alarma** dizendo que o silêncio
+não significa ausência de novidade. O diff também normaliza relógio/contadores
+antes do hash (provado: mudança só de horário **não** gera aviso; mudança de
+situação gera).
+
+### Vigia da validade
+
+`dias_para_expirar()` lê o `.pfx` e avisa a partir de 30 dias — a falha por
+certificado vencido é silenciosa e enganosa.
+
+### Subir / matar
+
+```
+docker compose -f ops/sessao/compose.yaml up -d --build
+docker compose -f ops/sessao/compose.yaml down          # kill switch
+```
+
+Variáveis obrigatórias: `TUIU_A1_PFX_HOST` (caminho do .pfx no host) e
+`TUIU_A1_PIN_FILE` (arquivo com o PIN).
+
 ## Estado atual
 
 O mecanismo de attach está **provado**: conecta na janela, lê página do
