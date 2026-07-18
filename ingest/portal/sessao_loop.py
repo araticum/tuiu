@@ -209,11 +209,66 @@ def rodar(uma_vez: bool = False, headless: bool = True) -> int:
             time.sleep(KEEPALIVE_S)
 
 
+def conectividade() -> int:
+    """Diagnóstico do container SEM certificado: prova o que dá para provar hoje
+    — chromium sobe, o Transferegov é alcançável, o Postgres responde e os
+    guardas do A1 estão no estado esperado."""
+    from playwright.sync_api import sync_playwright
+
+    ok = True
+    print(f"host: {os.uname().nodename if hasattr(os, 'uname') else 'windows'}")
+
+    # 1) chromium dentro do container
+    try:
+        with sync_playwright() as pw:
+            nav = pw.chromium.launch(headless=True, args=["--disable-dev-shm-usage", "--no-sandbox"])
+            pag = nav.new_page()
+            # 2) alcance ao Transferegov (página pública — sem login)
+            pag.goto(LEITURAS[0]["url"], wait_until="domcontentloaded", timeout=60000)
+            pag.wait_for_timeout(2000)
+            titulo, chars = pag.title(), len(pag.inner_text("body"))
+            print(f"[OK] chromium + Transferegov: '{titulo[:50]}' ({chars} chars)")
+            # 3) o detector de login funciona a partir daqui
+            pag.goto(LEITURAS[1]["url"], wait_until="domcontentloaded", timeout=60000)
+            pag.wait_for_timeout(2000)
+            caiu = _parece_login(pag.url, pag.title())
+            print(f"[{'OK' if caiu else 'ATENCAO'}] deteccao de sessao nao autenticada: "
+                  f"{'redirecionou p/ login (esperado sem A1)' if caiu else 'NAO detectou login'}")
+            nav.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[FALHA] chromium/rede: {type(exc).__name__}: {exc}"[:300])
+        ok = False
+
+    # 4) banco (para gravar eventos)
+    try:
+        sys.path.insert(0, "/app/backend")
+        from app.db import conectar
+        with conectar() as con:
+            n = con.execute("SELECT count(*) FROM eventos").fetchone()[0]
+        print(f"[OK] postgres alcancavel — {n} evento(s) na base")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[FALHA] postgres: {type(exc).__name__}: {str(exc)[:160]}")
+        ok = False
+
+    # 5) guardas do certificado
+    from auth_certificado import caminho_certificado, dias_para_expirar
+    pfx = caminho_certificado()
+    dias = dias_para_expirar()
+    print(f"[{'OK' if pfx else 'INFO'}] certificado: {pfx or 'nao configurado (esperado neste teste)'}"
+          + (f" | expira em {dias} dias" if dias is not None else ""))
+    print(f"[INFO] opt-in TUIU_SESSAO_ATIVA={os.environ.get('TUIU_SESSAO_ATIVA', '0')}")
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--uma-vez", action="store_true")
+    ap.add_argument("--conectividade", action="store_true",
+                    help="diagnostico sem certificado (chromium, rede, banco, guardas)")
     ap.add_argument("--com-janela", action="store_true", help="não-headless (depuração)")
     args = ap.parse_args()
+    if args.conectividade:
+        sys.exit(conectividade())
     sys.exit(rodar(uma_vez=args.uma_vez, headless=not args.com_janela))
 
 
