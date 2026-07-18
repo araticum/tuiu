@@ -41,7 +41,8 @@ RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from auth_certificado import contexto_autenticado, dias_para_expirar  # noqa: E402
+import sessao_estado as ESTADO_SESSAO  # noqa: E402
+from auth_certificado import dias_para_expirar  # noqa: E402
 from sessao_operador import DOMINIOS_OK, LEITURAS, _parece_login, _pendencias  # noqa: E402
 
 KEEPALIVE_S = int(os.environ.get("TUIU_SESSAO_KEEPALIVE_S", 15 * 60))
@@ -158,12 +159,15 @@ def rodar(uma_vez: bool = False, headless: bool = True) -> int:
     estado = _estado()
     ciclos_cegos = 0
     with sync_playwright() as pw:
-        contexto, aviso = contexto_autenticado(pw, headless=headless)
+        # A sessão é do CONTAINER: restaurada do storage_state persistido, que
+        # sobrevive ao restart. O login (com captcha) foi feito uma vez, no
+        # bootstrap — daqui em diante a manutenção é automática.
+        contexto, motivo = ESTADO_SESSAO.abrir_contexto(pw, headless=headless)
         if contexto is None:
-            print("ERRO:", aviso)
+            print("ERRO:", motivo)
             return 1
-        if aviso:
-            print("aviso:", aviso)
+        print(f"sessão restaurada · idade {ESTADO_SESSAO.idade_horas()} h · "
+              f"{ESTADO_SESSAO.ler_meta().get('cookies', '?')} cookie(s)")
         pagina = contexto.new_page()
 
         ultimo_leitura = 0.0
@@ -186,21 +190,25 @@ def rodar(uma_vez: bool = False, headless: bool = True) -> int:
                     ciclos_cegos = 0
 
                 if r == "SESSAO_CAIU":
-                    _auditar({"acao": "reautenticar", "motivo": "sessao_caiu"})
-                    try:
-                        contexto.close()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    contexto, aviso = contexto_autenticado(pw, headless=headless)
-                    if contexto is None:
-                        _notificar("sessão perdida", f"não consegui reautenticar: {aviso}")
-                        return 1
-                    pagina = contexto.new_page()
+                    # Fim da vida útil da sessão: é ISTO que a premissa mede.
+                    horas = ESTADO_SESSAO.idade_horas()
+                    _auditar({"acao": "sessao_expirou", "idade_horas": horas,
+                              "salvamentos": ESTADO_SESSAO.ler_meta().get("salvamentos")})
+                    _notificar("sessão expirou",
+                               f"A sessão durou {horas} h sob keepalive automático. "
+                               "Precisa de novo bootstrap (login humano — o gov.br "
+                               "protege o login com captcha).")
+                    print(f"SESSAO EXPIROU apos {horas} h — bootstrap necessario")
+                    return 2
+                # cookies são renovados pelo servidor: re-salvar mantém a sessão viva
+                ESTADO_SESSAO.salvar(contexto)
             else:
                 # keepalive: toque leve só para a sessão não expirar
                 try:
                     pagina.goto(LEITURAS[0]["url"], wait_until="domcontentloaded", timeout=30000)
-                    _auditar({"acao": "keepalive", "ok": True})
+                    ESTADO_SESSAO.salvar(contexto)
+                    _auditar({"acao": "keepalive", "ok": True,
+                              "idade_horas": ESTADO_SESSAO.idade_horas()})
                 except Exception as exc:  # noqa: BLE001
                     _auditar({"acao": "keepalive", "erro": str(exc)[:150]})
 
