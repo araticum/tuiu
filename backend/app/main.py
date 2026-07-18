@@ -59,6 +59,43 @@ def marcos(farol: str | None = None):
         return {"disponivel": False, "erro": str(exc), "marcos": []}
 
 
+@app.get("/api/eventos")
+def eventos(cnpj: str | None = None, limite: int = 200):
+    try:
+        with conectar() as con:
+            sql = ("SELECT id, cnpj, ente, dominio, chave, rotulo, tipo, de, para,"
+                   " snapshot::text, criado_em FROM eventos")
+            args: tuple = ()
+            if cnpj:
+                sql += " WHERE cnpj = %s"
+                args = ("".join(c for c in cnpj if c.isdigit()),)
+            sql += " ORDER BY id DESC LIMIT %s"
+            args += (limite,)
+            cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo",
+                    "de", "para", "snapshot", "criado_em"]
+            return {"disponivel": True, "eventos": [dict(zip(cols, r)) for r in con.execute(sql, args)]}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "eventos": []}
+
+
+@app.get("/api/entregas")
+def entregas(canal: str | None = None):
+    try:
+        with conectar() as con:
+            sql = ("SELECT e.id, e.canal, e.endereco, e.mensagem, e.status, e.detalhe,"
+                   " e.criado_em, e.enviado_em FROM entregas e")
+            args: tuple = ()
+            if canal:
+                sql += " WHERE e.canal = %s"
+                args = (canal,)
+            sql += " ORDER BY e.id DESC LIMIT 100"
+            cols = ["id", "canal", "endereco", "mensagem", "status", "detalhe",
+                    "criado_em", "enviado_em"]
+            return {"disponivel": True, "entregas": [dict(zip(cols, r)) for r in con.execute(sql, args)]}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "entregas": []}
+
+
 @app.get("/api/alertas")
 def alertas():
     try:
