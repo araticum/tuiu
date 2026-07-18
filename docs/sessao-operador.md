@@ -50,6 +50,42 @@ estiver autenticada, ele avisa e para.
 Saída em `data/sessao/<data>/` (texto, HTML e estrutura na descoberta) +
 `auditoria.jsonl` com cada navegação. Nada disso é versionado.
 
+## ⛔ Resultado do teste com A1: login automatizado está FORA (18/07/2026)
+
+Testamos no araticum, com o A1 real da Araticum, para validar a premissa de
+"container loga sozinho e sustenta a sessão". O caminho foi percorrido até o
+fim e o veredito é **negativo — por decisão da plataforma, não por limitação
+técnica nossa**:
+
+1. O Transferegov tem **um único caminho de login**: "Entrar com gov.br" →
+   `sso.acesso.gov.br` (não há login local no IdP).
+2. Na tela do gov.br, "Seu certificado digital" **não é link navegável** — é
+   `<button id="login-certificate">` com handler JS. Não há URL para um GET.
+3. Ao acionar esse botão, o gov.br dispara **hCaptcha**
+   (`api.hcaptcha.com/getcaptcha/...`) — o login é **deliberadamente protegido
+   por anti-bot**.
+
+**Não resolvemos nem contornamos captcha.** É linha que não se cruza, e é o
+recado explícito da plataforma de que login automatizado não é bem-vindo.
+Portanto: **o container não se autentica sozinho.**
+
+Achados laterais do teste (úteis e registrados):
+- O A1 da Araticum é **e-CNPJ** (OIDs `2.16.76.1.3.3/.7`), válido até
+  17/09/2026 — e a operação no Transferegov exige **e-CPF** de qualquer forma.
+- `client_certificates` do Playwright carrega o `.p12` sem tocar no store do SO
+  (mecanismo funciona; o bloqueio é o captcha, não o certificado).
+- Segredo montado precisa pertencer ao **uid do container** (`10001`), com
+  `chmod 400` — `600 pedro` não é legível pelo processo não-root.
+
+### O que fica valendo
+
+O **modelo attach**: o operador faz o login **manualmente** (resolvendo o
+captcha, como humano) uma vez, e o container **sustenta e lê** aquela sessão.
+Isso preserva tudo o que importa — estado do mesmo dia, sem D-1 — sem
+automatizar autenticação nem burlar proteção. A pergunta que sobra ("por
+quantos dias a sessão se sustenta com keepalive?") continua respondível: é só
+medir a partir de um login manual.
+
 ## Modo container com A1 (leitura no mesmo dia, sem depender do D-1)
 
 **Fronteira travada com o dono (18/07): o certificado serve só para LOGIN.
