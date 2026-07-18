@@ -45,7 +45,9 @@ PESO_PROPOSTA_SOFRENDO = 2
 DOGFOOD = {
     "01616520000196": "dogfood (Águas Lindas/GO pref.)",
     "07460294000183": "dogfood (Águas Lindas/GO FMS)",
-    "34925198000136": "dogfood (Cutias/AP)",
+    "34925198000136": "dogfood (Cutias/AP pref.)",
+    "12008067000151": "dogfood (Cutias/AP FMS)",
+    "15030230000170": "dogfood (Cutias/AP FMAS)",
     "20069629000103": "dogfood (Ecos da Natureza/SP)",
 }
 
