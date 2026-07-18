@@ -14,6 +14,7 @@ Agendamento (Task Scheduler, diário ~09h30 — após a carga da API):
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -79,6 +80,8 @@ def main():
         _passo(fh, "regularidade CAUC", [py, "ingest/cauc/coletar_cauc.py"])
         _passo(fh, "motor de prazos (marcos + alertas)", [py, "backend/app/motor_prazos.py"])
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])
+        if os.environ.get("TUIU_IMAP_HOST"):
+            _passo(fh, "inbox (e-mail -> eventos)", [py, "ingest/inbox/coletar_inbox.py"])
         _passo(fh, "notificador (outbox/webhook/whatsapp)", [py, "backend/app/notificador.py"])
         if not args.sem_radar:
             _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"])

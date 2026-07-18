@@ -48,11 +48,39 @@ template e trocar o corpo `text` por `template` no `notificador._enviar_whatsapp
 - `GET /api/eventos?cnpj=&limite=` · `GET /api/entregas?canal=`
 - Tela `/eventos.html`: feed de mudanças + outbox WhatsApp-ready.
 
+## Inbox parser (F1.6) — o recado privado do portal
+
+O diff D-1 vê o andamento público; o **inbox parser** cobre o que só chega por
+e-mail (diligência, complementação solicitada, resultado de análise). O
+convenente cria um filtro que **reencaminha** as notificações do Transferegov
+para uma caixa que lemos por IMAP — sem nenhuma credencial gov.br.
+
+**Segurança (e-mail = conteúdo não-confiável):**
+- só remetente na allowlist `TUIU_INBOX_REMETENTES` vira evento; o resto fica
+  `suspeito` e **nunca** notifica (testado com fixture de phishing/injeção);
+- o parser só **extrai e classifica** — nunca executa, nunca segue link
+  (links são removidos e contados);
+- e-mail sem CNPJ de ente monitorado → `nao_atribuido` (aparece, mas não dispara).
+
+Atribuição: CNPJ no corpo → ente monitorado; senão mapa `inbox_origem`
+(endereço reencaminhador → CNPJ); senão `nao_atribuido`. Eventos de inbox usam
+a MESMA tabela `eventos` (origem='inbox') → mesmo notificador.
+
+Config IMAP: `TUIU_IMAP_HOST`, `TUIU_IMAP_USER`, `TUIU_IMAP_PASS`,
+`TUIU_IMAP_FOLDER` (default INBOX). Sem eles, a cadeia diária pula o passo.
+
+⚠️ CALIBRAR: os domínios remetentes e as frases de classificação em
+`parser_email.py` são um ponto de partida — ajustar contra e-mails REAIS do
+Transferegov (marcados `CALIBRAR` no código).
+
 ## Rodar
 
 ```
-py -3 backend/app/eventos.py       # detecta (migra sozinho)
-py -3 backend/app/notificador.py   # despacha
-py -3 ops/rodar_diario.py          # cadeia inteira (inclui os dois)
-py -3 testes/smoke_eventos.py      # smoke ponta a ponta (webhook sink + wpp dryrun)
+py -3 backend/app/eventos.py                          # diff (migra sozinho)
+py -3 ingest/inbox/coletar_inbox.py --eml <pasta>     # inbox por .eml (teste)
+py -3 ingest/inbox/coletar_inbox.py                   # inbox por IMAP (env)
+py -3 backend/app/notificador.py                      # despacha
+py -3 ops/rodar_diario.py                             # cadeia inteira
+py -3 testes/smoke_eventos.py                         # smoke diff (webhook + wpp dryrun)
+py -3 testes/smoke_inbox.py                           # smoke inbox (allowlist + atribuição)
 ```
