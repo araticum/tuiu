@@ -4,11 +4,11 @@ Canais (plugáveis, idempotentes por evento+canal+endereço):
   - outbox   : sempre — persiste a mensagem WhatsApp-ready (status 'pendente').
   - webhook  : se houver destinatário canal='webhook' (ou TUIU_WEBHOOK_URL) —
                POST JSON do evento. É o "webhook de saída" para plugar onde quiser.
-  - whatsapp : se houver destinatário canal='whatsapp' E provider configurado —
-               envia via WhatsApp Cloud API PRÓPRIA (TUIU_WPP_TOKEN + _PHONE_ID).
-               Nunca toca a Seriema de produção do oasis.v2 (decisão do dono:
-               instância própria só na F5). TUIU_WPP_DRYRUN=1 = monta o payload
-               e não envia (para testar sem disparar de verdade).
+  - whatsapp : via **Seriema importado** (`app/seriema.py` — porte do cliente do
+               oasis.v2, HMAC v1 contra a sessão WhatsApp própria). Nunca chama
+               a instância de PRODUÇÃO do oasis.v2: o Tuiú aponta para a sua
+               própria sessão (TUIU_SERIEMA_*). TUIU_SERIEMA_DRYRUN=1 monta e
+               não envia.
 
 Uso:
     py -3 backend/app/notificador.py
@@ -25,13 +25,10 @@ from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app import seriema  # noqa: E402
 from app.db import conectar  # noqa: E402
 
 WEBHOOK_URL = os.environ.get("TUIU_WEBHOOK_URL", "").strip()
-WPP_TOKEN = os.environ.get("TUIU_WPP_TOKEN", "").strip()
-WPP_PHONE_ID = os.environ.get("TUIU_WPP_PHONE_ID", "").strip()
-WPP_API = os.environ.get("TUIU_WPP_API", "https://graph.facebook.com/v20.0")
-WPP_DRYRUN = os.environ.get("TUIU_WPP_DRYRUN", "").strip() in ("1", "true", "yes")
 
 ICONE = {"novo": "🆕", "mudanca": "🔔", "incremento": "➕"}
 
@@ -67,15 +64,10 @@ def _post_json(url: str, payload: dict, headers: dict | None = None) -> tuple[bo
         return False, f"{type(e).__name__}: {e}"
 
 
-def _enviar_whatsapp(to: str, msg: str) -> tuple[bool, str]:
-    if not (WPP_TOKEN and WPP_PHONE_ID):
-        return False, "provider WhatsApp não configurado (TUIU_WPP_TOKEN/_PHONE_ID)"
-    payload = {"messaging_product": "whatsapp", "to": to, "type": "text",
-               "text": {"preview_url": False, "body": msg}}
-    if WPP_DRYRUN:
-        return True, "DRYRUN " + json.dumps(payload, ensure_ascii=False)
-    return _post_json(f"{WPP_API}/{WPP_PHONE_ID}/messages", payload,
-                      {"Authorization": f"Bearer {WPP_TOKEN}"})
+def _enviar_whatsapp(destino: str, msg: str, chave_entrega: str) -> tuple[bool, str]:
+    """Canal WhatsApp = Seriema importado. `destino` é o rótulo do destinatário
+    (o grupo real vem de TUIU_SERIEMA_GROUP_ID)."""
+    return seriema.enviar_grupo(msg, chave_entrega=chave_entrega)
 
 
 def _registrar(con, evento_id: int, canal: str, endereco: str | None, msg: str,
@@ -116,7 +108,7 @@ def despachar() -> dict:
                 if canal == "webhook":
                     ok, det = _post_json(endereco, {"evento": ev, "mensagem": msg})
                 elif canal == "whatsapp":
-                    ok, det = _enviar_whatsapp(endereco, msg)
+                    ok, det = _enviar_whatsapp(endereco, msg, f"evento-{ev['id']}")
                 else:
                     ok, det = False, f"canal desconhecido: {canal}"
                 if _registrar(con, ev["id"], canal, endereco, msg,

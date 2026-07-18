@@ -76,6 +76,14 @@ def main():
             continue
         carteira = json.loads(cj.read_text(encoding="utf-8"))
         cnpj, ibge = carteira["cnpj"], _ibge(carteira, sub)
+        nossos_previa = _nossos_convenios(sub)
+        if not nossos_previa:
+            # nada a cruzar: não gasta chamada de API (importa em município grande,
+            # onde a paginação de 15 em 15 estoura o limite — ex.: OSC na capital)
+            saida["entes"].append({"cnpj": cnpj, "rotulo": carteira.get("nome"), "ibge": ibge,
+                                   "pulado": "sem instrumentos no detru — nada a cruzar"})
+            print(f"  {cnpj}: pulado (sem instrumentos no detru)")
+            continue
         if not ibge:
             saida["entes"].append({"cnpj": cnpj, "rotulo": carteira.get("nome"),
                                    "pulado": "sem código IBGE (nem g2 nem detru) — Portal exige filtro de localidade"})
