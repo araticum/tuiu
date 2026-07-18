@@ -1,4 +1,13 @@
-"""Cliente CAUC (F2) — regularidade fiscal do ente no Sistema de Informações
+"""Cliente CAUC — ⚠️ FORA DO ESCOPO desde a correção de 18/07/2026.
+
+O CAUC mede a regularidade fiscal do **ENTE** (RREO/RGF, Fundeb, SIAFIC,
+mínimos de saúde/educação). O cliente do Tuiú é o **TERCEIRO EXECUTOR**, que
+não tem essas obrigações — a regularidade que o trava é CEPIM/CEIS/CNEP, em
+`ingest/transparencia/regularidade_terceiro.py`. Este módulo fica preservado
+(funciona, mapeia a API) caso um dia atendamos entes; **não está na cadeia
+diária**.
+
+Regularidade fiscal do ente no Sistema de Informações
 sobre Requisitos Fiscais (sti.tesouro.gov.br, IN STN/MF 8/2025, 26 itens).
 
 Mapa da API descoberto do bundle Angular em 18/07/2026 (base same-origin `/ng`):

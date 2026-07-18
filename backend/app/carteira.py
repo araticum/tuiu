@@ -16,14 +16,20 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[2]
 RECORTES = RAIZ / "data" / "recortes"
 
-# rótulos do dogfood (espelho de ingest/transferegov_g2/recorte_ente.py)
+# Rótulos dos monitorados (espelho de ingest/transferegov_g2/recorte_ente.py).
+# Escopo corrigido 18/07: o CLIENTE é o terceiro executor; os entes ficam como
+# contraparte/contexto.
 ROTULOS = {
-    "01616520000196": "Águas Lindas de Goiás/GO — prefeitura",
-    "07460294000183": "Águas Lindas de Goiás/GO — FMS",
-    "34925198000136": "Cutias/AP — prefeitura",
-    "12008067000151": "Cutias/AP — FMS",
-    "15030230000170": "Cutias/AP — FMAS",
+    # terceiros executores (clientes)
     "20069629000103": "Ecos da Natureza/SP — OSC",
+    "37113180000128": "Assoc. das Pioneiras Sociais/DF — OSC",
+    "31883355000108": "Cooperativa Lixo Não/SP — cooperativa",
+    # entes (contraparte / contexto)
+    "01616520000196": "Águas Lindas de Goiás/GO — prefeitura (ente)",
+    "07460294000183": "Águas Lindas de Goiás/GO — FMS (ente)",
+    "34925198000136": "Cutias/AP — prefeitura (ente)",
+    "12008067000151": "Cutias/AP — FMS (ente)",
+    "15030230000170": "Cutias/AP — FMAS (ente)",
 }
 
 
