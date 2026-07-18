@@ -25,6 +25,16 @@ def cockpit():
     return montar_cockpit()
 
 
+@app.get("/api/verificacao")
+def verificacao():
+    snap = snapshot_mais_recente()
+    arq = (snap / "_verificacao.json") if snap else None
+    if arq and arq.exists():
+        import json as _json
+        return {"disponivel": True, **_json.loads(arq.read_text(encoding="utf-8"))}
+    return {"disponivel": False, "motivo": "rode ingest/transferegov_g2/verificar.py"}
+
+
 @app.get("/api/saude")
 def saude():
     snap = snapshot_mais_recente()

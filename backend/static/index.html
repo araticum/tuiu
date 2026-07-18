@@ -48,6 +48,7 @@
 <header>
   <h1>Tuiú · Cockpit <small>transferências da União</small></h1>
   <span class="badge" id="snap">carregando…</span>
+  <span class="badge" id="conf" title="Conferência de integridade contra a g2 oficial ao vivo"></span>
   <a class="badge" href="/carteira.html">Carteira ▸</a>
   <a class="badge" href="/agenda.html">Agenda de prazos ▸</a>
   <a class="badge" href="/eventos.html">Andamento ▸</a>
@@ -72,6 +73,15 @@
 const brl = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:0});
 const dbr = s => s ? s.split("-").reverse().join("/") : "—";
 const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+fetch("/api/verificacao").then(r=>r.json()).then(v=>{
+  const el = document.getElementById("conf");
+  if(!v.disponivel){ el.textContent = ""; return; }
+  const r = v.resumo||{};
+  const ok = (r.divergem||0)===0 && v.snapshot_fresco;
+  el.textContent = ok ? `✓ confere com a g2 (${r.conferem})` : `⚠ ${r.divergem} divergência(s)`;
+  el.style.color = ok ? "var(--ok)" : "var(--at)";
+}).catch(()=>{});
 
 fetch("/api/cockpit").then(r=>r.json()).then(c=>{
   document.getElementById("snap").textContent = c.snapshot ? `dados de ${dbr(c.snapshot)} (D-1)` : "sem dados";
