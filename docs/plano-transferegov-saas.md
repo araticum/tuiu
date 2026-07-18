@@ -168,6 +168,17 @@ consórcio/assessoria por ente adicional decrescente; OSC R$ 390–690/mês. Pil
 grátis, 3 entes. Diferencial de confiança: preço público no site (ninguém no nicho tem) + LGPD by design
 (Pedro/DPO — ativo jurídico da casa).
 
+**Motor comercial interno** (decisão do dono 18/07, pós-benchmark do "Hub da PROJETUS"): a prospecção
+por dados vive FORA do produto, como ferramenta interna — `ferramentas/radar_comercial.py` cruza o dump
+diário de parcerias (propostas, indicações de emenda) com os planos de ação Pix (g2 `/especiais`, com
+cache diário) e ranqueia entes por **dor + dinheiro em trânsito**: impedimento Pix com motivo citável
+(peso 3) > emenda indicada a caminho (2) > proposta travada (2). Sai lista em `data/radar/` com o
+"motivo da abordagem" pronto (ex.: *"plano 09032025-081684 impedido — LC 210/2024, art. 10, X"*). A
+lógica é o inverso do hub de referência: ranquear por quem PRECISA, não por quem existe (MOSC vira só
+enriquecimento futuro). Usos: escolher pilotos, abordagem com fato real, decidir o 4º ente dogfood.
+Evolui com o ingest (CAUC e prestações vencendo do detru na F2; população IBGE p/ porte); em F5+ pode
+virar o módulo vendável "Radar de território" para assessorias multi-ente.
+
 ## 6. O produto — superfícies
 
 Personas: **secretário/gestor de convênios** (opera), **prefeito/dirigente** (lê o painel e o PDF),
@@ -237,6 +248,9 @@ Operação contínua desde F1: **vigília normativa** — as portarias conjuntas
 alterações na PC 33 desde 2023; ciclo anual de comunicados de emendas); monitorar
 `gov.br/transferegov/legislacao` + comunicados e atualizar `regras_normativas` com vigência, nunca
 sobrescrever.
+
+Paralelo desde 18/07 (não é fase e não bloqueia fase): **radar comercial interno** (§5) — ganha fontes
+novas conforme o ingest avança (CAUC/detru na F2), e só vira superfície de produto em F5+.
 
 ## 9. Riscos e gotchas
 
