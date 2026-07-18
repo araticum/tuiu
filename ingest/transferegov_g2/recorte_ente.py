@@ -130,9 +130,18 @@ def recortar(cnpj: str, destino: Path, workers: int) -> dict:
 def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
     r, planos = dados["parcerias"], dados["planos"]
     props = r["proposta"]
-    nome = next((p.get("nm_ente_recebedor") for p in props), None) or DOGFOOD.get(cnpj, cnpj)
-    uf = next((p.get("sg_uf_recebedor") for p in props), None)
-    mun = next((p.get("nm_municipio_recebedor") for p in props), None)
+    emendas_rows = r.get("beneficiario_emenda_parlamentar", [])
+    nome = (next((p.get("nm_ente_recebedor") for p in props), None)
+            or next((b.get("nm_beneficiario_emenda") for b in emendas_rows), None)
+            or next((str(v) for b in dados["beneficiarios"] for k, v in b.items()
+                     if "nome" in k.lower() and v), None)
+            or DOGFOOD.get(cnpj, cnpj))
+    uf = (next((p.get("sg_uf_recebedor") for p in props), None)
+          or next((b.get("sg_uf_beneficiario_emenda") for b in emendas_rows), None)
+          or next((str(v) for b in dados["beneficiarios"] for k, v in b.items()
+                   if "uf" in k.lower() and v), None))
+    mun = (next((p.get("nm_municipio_recebedor") for p in props), None)
+           or next((b.get("nm_municipio_beneficiario_emenda") for b in emendas_rows), None))
 
     sit_prop = Counter(p.get("situacao_proposta") for p in props)
     sit_parc = Counter(p.get("in_situacao_parceria") for p in r.get("parceria", []))
