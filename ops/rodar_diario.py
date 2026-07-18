@@ -73,7 +73,9 @@ def main():
     py = sys.executable
     with open(LOGS / f"diario-{date.today().isoformat()}.log", "a", encoding="utf-8") as fh:
         _log(fh, "=== cadeia diária do Tuiú ===")
-        _passo(fh, "recorte g2 (entes monitorados)", [py, "ingest/transferegov_g2/recorte_ente.py"])
+        # A carteira vem da tabela `clientes` (onboarding por comando, não por
+        # commit) — os scripts abaixo resolvem a lista sozinhos.
+        _passo(fh, "recorte g2 (clientes da carteira)", [py, "ingest/transferegov_g2/recorte_ente.py"])
         if not args.sem_detru:
             _refresh_detru(fh)
             _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
