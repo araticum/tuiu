@@ -90,7 +90,43 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
 
 def _marcos_especiais(con, cnpj: str, ente: str, carteira: dict, hoje: date) -> list[dict]:
     marcos = []
-    for imp in carteira.get("especiais", {}).get("impedidos", []):
+    esp = carteira.get("especiais", {})
+
+    # Relatório de gestão ausente no estoque 2020–2024 (a dor dos 82%)
+    sem_rel = esp.get("sem_relatorio_2020_2024", [])
+    if sem_rel:
+        regra = regra_vigente(con, "pix_relatorio_gestao_estoque", "especiais", hoje)
+        prazo = date.fromisoformat(regra["valor"]["prazo"]) if regra else None
+        base = regra["base_legal"] if regra else "IN TCU 93/2024"
+        for p in sem_rel:
+            marcos.append({
+                "cnpj": cnpj, "ente": ente, "fonte": "especiais",
+                "instrumento": p.get("codigo"), "tipo": "relatorio_gestao_pix",
+                "data_limite": prazo,
+                "descricao": f"Relatório de Gestão AUSENTE do plano {p.get('codigo')} "
+                             f"({p.get('ano')}, {p.get('situacao')}) — estoque 2020–2024",
+                "base_legal": f"{base}; multa de 1%/dia por pendência",
+                "farol": _farol(prazo, hoje), "detalhes": p,
+            })
+
+    # Fim de execução pactuado no plano de trabalho aprovado
+    for pt in esp.get("planos_trabalho", {}).get("fins_execucao", []):
+        try:
+            fim = date.fromisoformat(str(pt.get("fim_execucao"))[:10])
+        except ValueError:
+            continue
+        if fim >= hoje:
+            marcos.append({
+                "cnpj": cnpj, "ente": ente, "fonte": "especiais",
+                "instrumento": pt.get("codigo"), "tipo": "fim_execucao_pix",
+                "data_limite": fim,
+                "descricao": f"Fim da execução pactuada do plano {pt.get('codigo')} "
+                             f"({pt.get('situacao')})",
+                "base_legal": "plano de trabalho aprovado no Transferegov (execução pactuada)",
+                "farol": _farol(fim, hoje), "detalhes": pt,
+            })
+
+    for imp in esp.get("impedidos", []):
         regra = regra_vigente(con, "pix_multa_diaria_pendencia", "especiais", hoje)
         base = regra["base_legal"] if regra else "IN TCU 93/2024"
         motivo = (imp.get("motivo") or imp.get("situacao") or "").strip()

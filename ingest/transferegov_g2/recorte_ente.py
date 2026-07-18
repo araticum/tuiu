@@ -61,10 +61,10 @@ def _todas_paginas(url_base: str, rota: str, filtros: dict) -> list[dict]:
     return linhas
 
 
-def _por_ids(rota: str, campo: str, ids: list, workers: int) -> list[dict]:
+def _por_ids(rota: str, campo: str, ids: list, workers: int, base: str = BASE) -> list[dict]:
     """Uma consulta filtrada por id-pai; a API não tem operador IN."""
     def um(i):
-        return _todas_paginas(BASE, rota, {campo: str(i)})
+        return _todas_paginas(base, rota, {campo: str(i)})
 
     linhas: list[dict] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -119,12 +119,20 @@ def recortar(cnpj: str, destino: Path, workers: int) -> dict:
         if bid is not None:
             planos.extend(_todas_paginas(ESPECIAIS, "planos_acao_especiais", {"id_beneficiario": str(bid)}))
 
+    # ciclo do plano: relatórios de gestão e planos de trabalho ligam por id_plano_acao
+    ids_pa = [p.get("id_plano_acao") for p in planos if p.get("id_plano_acao") is not None]
+    relatorios = _por_ids("relatorios_gestao_especiais", "id_plano_acao", ids_pa, workers, base=ESPECIAIS)
+    planos_trabalho = _por_ids("planos_trabalho_especiais", "id_plano_acao", ids_pa, workers, base=ESPECIAIS)
+
     pdir = destino / "parcerias"
     for rota, linhas in r.items():
         _grava(pdir, rota.replace("_", "-"), linhas)
     _grava(destino / "especiais", "beneficiarios", beneficiarios)
     _grava(destino / "especiais", "planos_acao", planos)
-    return {"parcerias": r, "planos": planos, "beneficiarios": beneficiarios}
+    _grava(destino / "especiais", "relatorios_gestao", relatorios)
+    _grava(destino / "especiais", "planos_trabalho", planos_trabalho)
+    return {"parcerias": r, "planos": planos, "beneficiarios": beneficiarios,
+            "relatorios": relatorios, "planos_trabalho": planos_trabalho}
 
 
 def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
@@ -158,6 +166,22 @@ def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
         float(p.get("valor_custeio_plano_acao") or 0) + float(p.get("valor_investimento_plano_acao") or 0)
         for p in planos
     )
+    relatorios = dados.get("relatorios", [])
+    pts = dados.get("planos_trabalho", [])
+    pa_com_relatorio = {rel.get("id_plano_acao") for rel in relatorios}
+    sem_relatorio_estoque = [
+        {"codigo": p.get("codigo_plano_acao"), "ano": p.get("ano_plano_acao"),
+         "situacao": p.get("situacao_plano_acao")}
+        for p in planos
+        if (p.get("ano_plano_acao") or 9999) <= 2024 and p.get("id_plano_acao") not in pa_com_relatorio
+    ]
+    pa_por_id = {p.get("id_plano_acao"): p for p in planos}
+    fins_execucao = [
+        {"codigo": (pa_por_id.get(pt.get("id_plano_acao")) or {}).get("codigo_plano_acao"),
+         "fim_execucao": pt.get("data_fim_execucao_plano_trabalho"),
+         "situacao": pt.get("situacao_plano_trabalho")}
+        for pt in pts if pt.get("data_fim_execucao_plano_trabalho")
+    ]
 
     cj = {
         "cnpj": cnpj, "nome": nome, "uf": uf, "municipio": mun, "data_atualizacao_api": dt_api,
@@ -173,6 +197,12 @@ def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
         "emendas_indicadas": {"qtd": len(emendas), "valor_total": vl_emendas, "parlamentares": parlamentares},
         "especiais": {
             "planos": len(planos), "por_situacao": dict(sit_pix), "valor_total": vl_pix,
+            "relatorios_gestao": {"total": len(relatorios),
+                                  "por_situacao": dict(Counter(str(rel.get("situacao_relatorio_gestao")) for rel in relatorios))},
+            "sem_relatorio_2020_2024": sem_relatorio_estoque,
+            "planos_trabalho": {"total": len(pts),
+                                "por_situacao": dict(Counter(str(pt.get("situacao_plano_trabalho")) for pt in pts)),
+                                "fins_execucao": fins_execucao},
             "impedidos": [
                 {
                     "codigo": p.get("codigo_plano_acao"), "ano": p.get("ano_plano_acao"),
@@ -204,6 +234,9 @@ def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
         "## Transferências especiais (emendas Pix)",
         f"- Planos de ação: **{len(planos)}** ({_brl(vl_pix)}) — "
         + (", ".join(f"{k}: {v}" for k, v in sit_pix.most_common()) if planos else "nenhum"),
+        f"- Relatórios de gestão registrados: **{len(relatorios)}** · planos de trabalho: {len(pts)}"
+        + (f" · 🔴 **{len(sem_relatorio_estoque)} plano(s) 2020–2024 SEM relatório de gestão**"
+           if sem_relatorio_estoque else ""),
     ]
     if impedidos:
         linhas.append(f"- 🔴 **{len(impedidos)} impedido(s)**:")
