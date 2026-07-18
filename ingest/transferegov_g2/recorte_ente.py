@@ -33,6 +33,24 @@ from g2_parcerias import BASE, _get_json, _url_rota, data_atualizacao  # noqa: E
 RAIZ = Path(__file__).resolve().parents[2]
 ESPECIAIS = BASE.rsplit("/", 1)[0] + "/especiais"
 
+def monitorados() -> dict[str, str]:
+    """Quem o pipeline acompanha. FONTE DE VERDADE = tabela `clientes` (a
+    carteira do operador cresce por dado, não por commit). O dicionário abaixo
+    é só semente/fallback quando não há banco."""
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(RAIZ / "backend"))
+        from app.db import conectar
+        with conectar() as con:
+            linhas = con.execute(
+                "SELECT doc, COALESCE(apelido, nome) FROM clientes WHERE ativo ORDER BY 2").fetchall()
+        if linhas:
+            return {d: n for d, n in linhas}
+    except Exception:  # noqa: BLE001 — sem banco, cai na semente
+        pass
+    return dict(DOGFOOD)
+
+
 DOGFOOD = {
     # TERCEIROS EXECUTORES = clientes (escopo corrigido 18/07)
     "20069629000103": "Ecos da Natureza/SP — OSC",
@@ -265,7 +283,7 @@ def main():
     ap.add_argument("--workers", type=int, default=6)
     args = ap.parse_args()
 
-    cnpjs = ["".join(c for c in x if c.isdigit()) for x in (args.cnpj or list(DOGFOOD))]
+    cnpjs = ["".join(c for c in x if c.isdigit()) for x in (args.cnpj or list(monitorados()))]
     dt_api = data_atualizacao()
     base_out = Path(args.out) if args.out else RAIZ / "data" / "recortes" / dt_api[:10]
 
