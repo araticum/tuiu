@@ -237,11 +237,11 @@ contrato.
 | Fase | Entrega | Pronto quando |
 |---|---|---|
 | **F0 — Radar do ente** | ingest g2 (`/parcerias` + `/especiais`) + delta CSV por CNPJ/IBGE; tela Carteira com situação/vigência/financeiro e `data_atualizacao` | para 3 entes reais, a carteira bate com o painel público oficial |
-| **F1 — Motor de prazos** | `regras_normativas` + `marcos` (§3 completo, incl. defeso e Pix); agenda; alertas WhatsApp T-30/7/1 | alerta real disparado de prazo real, com base legal no texto |
+| **F1 — Motor de prazos** | `regras_normativas` + `marcos` (§3 completo, incl. defeso e Pix); agenda; alertas T-30/7/1 em **outbox** WhatsApp-ready (envio real = F5, com Seriema próprio — decisão do dono 18/07: prod do oasis.v2 não é tocada) | alerta real gerado de prazo real, com base legal no texto, pronto p/ disparo |
 | **F2 — Regularidade** | CAUC diário (doc-extractor) + certidões (reuso Habilitação); semáforo, diff-alert, histórico | item que vira pendente gera WhatsApp em ≤24h, com evidência guardada |
 | **F3 — Cockpit & contas** | dossiê Sargaço, checklist por regime, wizard do Relatório de Gestão Pix, relatório executivo PDF timbrado assinado A1 | um instrumento real gerido ponta a ponta; relatório assinado entregue |
 | **F4 — IA** | resumo de programa, rascunho de plano de trabalho validado (quantitativo/espec./local), Q&A normativo — atrás do freio de custo | rascunho de plano de programa real aprovado pelo dono |
-| **F5 — SaaS** | multi-tenant (tamanduá), onboarding, billing Ariranha, preço público, DPA/LGPD formal, stack `tuiu` no araticum | 2 tenants pagantes isolados em produção |
+| **F5 — SaaS** | multi-tenant (tamanduá), onboarding, billing Ariranha, preço público, DPA/LGPD formal, stack `tuiu` PRÓPRIO no araticum **com instância Seriema própria** (liga a outbox da F1 ao WhatsApp real) | 2 tenants pagantes isolados em produção, com alertas chegando no celular |
 | **F6 — opcionais** | credenciamento compras/obras (ofício DTPAR) se cliente exigir; vigília normativa automatizada (DOU/comunicados); módulo obras (CIPI/medições); radar p/ mandatos | por demanda |
 
 Operação contínua desde F1: **vigília normativa** — as portarias conjuntas mudam a cada trimestre (4
