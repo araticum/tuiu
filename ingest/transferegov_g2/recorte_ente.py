@@ -34,12 +34,16 @@ RAIZ = Path(__file__).resolve().parents[2]
 ESPECIAIS = BASE.rsplit("/", 1)[0] + "/especiais"
 
 DOGFOOD = {
-    "01616520000196": "Águas Lindas de Goiás/GO — prefeitura",
-    "07460294000183": "Águas Lindas de Goiás/GO — FMS",
-    "34925198000136": "Cutias/AP — prefeitura",
-    "12008067000151": "Cutias/AP — FMS (Cutias do Araguari)",
-    "15030230000170": "Cutias/AP — FMAS",
+    # TERCEIROS EXECUTORES = clientes (escopo corrigido 18/07)
     "20069629000103": "Ecos da Natureza/SP — OSC",
+    "37113180000128": "Assoc. das Pioneiras Sociais/DF — OSC",
+    "31883355000108": "Cooperativa Lixo Não/SP — cooperativa",
+    # ENTES = contraparte/contexto (recortes preservados)
+    "01616520000196": "Águas Lindas de Goiás/GO — prefeitura (ente)",
+    "07460294000183": "Águas Lindas de Goiás/GO — FMS (ente)",
+    "34925198000136": "Cutias/AP — prefeitura (ente)",
+    "12008067000151": "Cutias/AP — FMS (ente)",
+    "15030230000170": "Cutias/AP — FMAS (ente)",
 }
 
 FILHAS_PROPOSTA = [

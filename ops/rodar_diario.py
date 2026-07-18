@@ -77,7 +77,8 @@ def main():
         if not args.sem_detru:
             _refresh_detru(fh)
             _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
-        _passo(fh, "regularidade CAUC", [py, "ingest/cauc/coletar_cauc.py"])
+        _passo(fh, "regularidade do terceiro (CEPIM/CEIS/CNEP)",
+               [py, "ingest/transparencia/coletar_regularidade.py"])
         _passo(fh, "conferencia de integridade (g2 ao vivo)", [py, "ingest/transferegov_g2/verificar.py"])
         _passo(fh, "motor de prazos (marcos + alertas)", [py, "backend/app/motor_prazos.py"])
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])

@@ -7,8 +7,22 @@
 
 ## 1. Tese do produto
 
-**Cockpit do lado de quem RECEBE**: prefeituras, consórcios e OSCs operando convênios, contratos de repasse,
-termos MROSC e emendas Pix no Transferegov.br. O governo tem plataforma, painel e IA de fiscalização
+> **CORREÇÃO DE ESCOPO — 18/07/2026 (dono).** O cliente do Tuiú é o **TERCEIRO
+> QUE EXECUTA o plano em prol de um ente/órgão da administração pública** —
+> OSC, associação, fundação, cooperativa, empresa, empresário individual — e
+> **não a prefeitura**. Consequências verificadas no dado e aplicadas abaixo:
+> **(a)** o CAUC sai de escopo (mede obrigação fiscal do ENTE: RREO/RGF,
+> Fundeb, SIAFIC, mínimos de saúde/educação — o terceiro não tem nada disso);
+> a regularidade que trava o terceiro é **CEPIM/CEIS/CNEP** (+ CND/FGTS/CNDT).
+> **(b)** transferências especiais (emendas Pix) **saem do núcleo**: o art.
+> 166-A transfere a entes federados, não a terceiros — o aparato de Pix já
+> construído fica preservado, porém **fora do núcleo**. **(c)** emendas
+> indicadas a entidade privada existem mas são marginais (**51 de 77.740 =
+> 0,1%**) — feature secundária, não pilar. **(d)** o alvo comercial inverte:
+> ver §5/§10.
+
+**Cockpit de quem EXECUTA**: OSCs, associações, fundações, cooperativas e empresas que executam convênios,
+contratos de repasse e termos MROSC (fomento/colaboração) em prol de órgãos públicos, no Transferegov.br. O governo tem plataforma, painel e IA de fiscalização
 ("Malha Fina" da CGU pontua risco de cada prestação de contas); o convenente tem tela crua, prazo perdido e
 multa. O Tuiú é o espelho gerencial + motor de prazos + compliance preventivo, alimentado pelas APIs e
 CSVs públicos oficiais (diários), com alerta por WhatsApp e documento assinado A1 na saída.
@@ -189,7 +203,7 @@ Personas: **secretário/gestor de convênios** (opera), **prefeito/dirigente** (
 | **Radar** | programas abertos + emendas destinadas ao ente (por CNPJ/IBGE), com filtro e aviso de janela; defeso eleitoral sinalizado | "não sabia que tinha recurso p/ mim" |
 | **Carteira** | todos os instrumentos do ente (todas as fontes/tipos) com situação, regime normativo, vigência, financeiro (empenho→OB→pagamento→saldo de conta), timeline de eventos | visão zero → visão única |
 | **Prazos** | agenda consolidada derivada do motor de regras (§3): fim de vigência, prestação de contas, suspensiva, relatório de gestão Pix, aditivos, defeso; alerta WhatsApp T-30/T-7/T-1 com base legal citada | multa de 1%/dia, instrumento caduco |
-| **Regularidade** | CAUC 26 itens diário + certidões com validade, semáforo, diff-alert ("item X virou pendente ontem"), histórico p/ auditoria | 80% travados sem saber o porquê |
+| **Regularidade** (corrigida p/ terceiros) | **CEPIM** (entidade privada impedida de celebrar — motivo típico: *não apresentação da prestação de contas*), **CEIS** (inidônea/suspensa) e **CNEP** (Lei 12.846) + certidões próprias (CND/FGTS/CNDT); semáforo, diff-alert e histórico p/ auditoria. **CAUC saiu**: é regularidade do ENTE | ser declarado impedido sem saber = perder o convênio |
 | **Contas & Pix** | checklist de prestação de contas por regime; wizard do Relatório de Gestão de emenda Pix (produz o conteúdo pronto p/ protocolar); pré-análise de risco espelhando a lógica pública da malha fina (Portaria 41/2023) | 82% atrasados; rejeição evitável |
 | **Documentos** | dossiê por instrumento (Sargaço), geração timbrada (ofícios, planos, relatório executivo do prefeito) via editor/pdf-render, **assinatura A1 ICP-Brasil** com TOTP | papelada dispersa; "cadê o comprovante de 5/10 anos atrás" |
 | **IA** (opt-in, freio de custo) | leitura de programa/chamamento → resumo executivo; rascunho de plano de trabalho com validações objetivas (quantitativo/especificação/local — exigência do regime simplificado); Q&A sobre a norma aplicável ao instrumento | equipe de 1–3 pessoas sem procurador |
@@ -240,7 +254,7 @@ contrato.
 | **F1 — Motor de prazos** | `regras_normativas` + `marcos` (§3 completo, incl. defeso e Pix); agenda; alertas T-30/7/1 em **outbox** WhatsApp-ready (envio real = F5, com Seriema próprio — decisão do dono 18/07: prod do oasis.v2 não é tocada) | alerta real gerado de prazo real, com base legal no texto, pronto p/ disparo |
 | **F1.5 — Motor de eventos** | diff D-1 do andamento (situação/empenho/OP/relatório) → `eventos` → notificação por canal plugável (outbox/webhook/WhatsApp Cloud API própria). É o "webhook" seguro (sem credencial gov.br de terceiros — a impersonação foi descartada) | mudança real de andamento vira evento + POST de webhook + payload WhatsApp (validado ponta a ponta) |
 | **F1.6 — Inbox parser** | reencaminho das notificações por e-mail do Transferegov → IMAP → parser (allowlist de remetente, extrai instrumento/tipo/prazo, ignora link/injeção) → mesmos `eventos`/notificador. Cobre o recado privado que o diff D-1 não vê | e-mail legítimo vira evento atribuído ao ente; phishing/injeção fica `suspeito` sem notificar (testado) |
-| **F2 — Regularidade** | CAUC diário (doc-extractor) + certidões (reuso Habilitação); semáforo, diff-alert, histórico | item que vira pendente gera WhatsApp em ≤24h, com evidência guardada |
+| **F2 — Regularidade do terceiro** | **CEPIM/CEIS/CNEP** via Portal da Transparência (API já ligada) + certidões próprias; semáforo, diff-alert, histórico. *CAUC fora de escopo (é do ente)* | entidade que entra no CEPIM gera alerta em ≤24h, com motivo e órgão |
 | **F3 — Cockpit & contas** | cockpit unificado; **checklist de prestação por regime** (base legal por item); **wizard do Relatório de Gestão Pix** (rascunho pronto p/ protocolar); **dossiê = pasta local** (sha256 + prazo de guarda). Sem Sargaço/pdf-render/A1 (decisão 18/07) | um instrumento real gerido ponta a ponta; rascunho do relatório entregue em markdown |
 | ~~F4 — IA~~ | **cortada (18/07)** — valor está no motor de regras determinístico, não em geração de texto paga | — |
 | **F5 — SaaS** | multi-tenant (tamanduá), onboarding, billing Ariranha, preço público, DPA/LGPD formal, stack `tuiu` PRÓPRIO no araticum **com instância Seriema própria** (liga a outbox da F1 ao WhatsApp real) | 2 tenants pagantes isolados em produção, com alertas chegando no celular |
@@ -274,20 +288,35 @@ novas conforme o ingest avança (CAUC/detru na F2), e só vira superfície de pr
 **Travadas (dono, 17/07/2026):**
 - Codinome: **Tuiú**.
 - Repo próprio **`araticum/tuiu`** (plano versionado aqui; peças do oasis.v2 como doadoras).
-- **Dogfood da F0 — 3 entes** (escolhidos por utilidade, cruzando o dump nacional da g2 `/parcerias` com os 57.827 planos de ação especiais da g1, 17/07/2026):
+- **Dogfood REVISTO (18/07, após a correção de escopo)** — os monitorados passam a
+  ser **terceiros executores**. Mantém-se **Ecos da Natureza/SP** `20.069.629/0001-03`
+  (Associação Privada, **2ª maior do país** em propostas na g2: 20, com a máquina de
+  estados mais rica — Em Elaboração/Em Análise/Em Captação/Em Execução/Rejeitada).
+  Entram, por cobertura de caminhos distintos: **Associação das Pioneiras Sociais/DF**
+  `37.113.180/0001-28` (44 propostas, todas Aprovadas + cadeia financeira + é das
+  poucas que recebem emenda parlamentar) e um perfil de **cooperativa/empresa** —
+  ex.: *Cooperativa Lixo Não/SP* `31.883.355/0001-08` (rejeições) ou *INN Inovação/RJ*
+  `55.363.320/0001-06`. As prefeituras (Águas Lindas, Cutias) **saem de cliente** e
+  ficam só como contraparte/contexto — os recortes já feitos continuam úteis para
+  testar o lado do ente.
+- *(histórico) Dogfood original da F0 — 3 entes* (escolhidos antes da correção de escopo, cruzando o dump nacional da g2 `/parcerias` com os 57.827 planos de ação especiais da g1, 17/07/2026):
   1. **Águas Lindas de Goiás/GO** — prefeitura `01.616.520/0001-96` (16 planos Pix, 2 impedidos) + FMS `07.460.294/0001-83` (41 propostas, 14 programas, cadeia NE→DH→OP completa, 372 lançamentos de extrato). Exercita cadeia financeira profunda, radar multi-programa e o gotcha **1 ente = N CNPJs**.
   2. **Cutias/AP** — `34.925.198/0001-36` (~6 mil hab): 40 planos Pix 2020→2026 (estoque ADPF 854 + ciclo atual), 6 impedimentos/rejeições, 18 propostas em parcerias. Exercita o cliente-alvo típico, impedimentos, Amazônia Legal (PC 84/2025) e ≤20 mil hab (PNCP art. 176).
   3. **Ecos da Natureza/SP** — OSC `20.069.629/0001-03`: 20 propostas com estados ricos (Em Elaboração/Em Análise/Em Captação/Em Execução/Rejeitada). Exercita MROSC, estados não-felizes e a fronteira "OSC não recebe Pix" (confirmado: zero planos).
   - Lacuna assumida: contrato de repasse com OBRA (regime completo) não aparece na g2 — conferir no ingest do CSV detru se Águas Lindas cobre no legado; senão, promover um 4º ente só para esse caminho. Consórcios foram descartados com dados (36 entes na g2, nenhum com cadeia financeira).
 
-- **Ordem de segmento (fechada 18/07)**: **(1) prefeituras pequenas e médias** —
-  é onde a dor é aguda e mensurável (no dogfood: 20 prestações vencidas, 8 planos
-  Pix impedidos, 25 relatórios de gestão ausentes com multa de 1%/dia). **(2)
-  assessorias/consultorias de captação como CANAL** (um contrato → N entes,
-  mesmo produto, sem custo de aquisição por município). **(3) OSCs depois** —
-  ciclo MROSC mais simples e ticket menor. **Consórcios saem da lista de alvo
-  inicial** e viram canal: o dado mostrou que quase não operam instrumento
-  próprio (36 na g2, nenhum com cadeia financeira).
+- **Ordem de segmento (REVISTA 18/07 após a correção de escopo)**: o alvo é o
+  **terceiro executor**, não o ente. Universo medido na g2: **2.058 entidades
+  privadas distintas com 4.090 propostas** — Associação Privada (2.524
+  propostas), Sociedade Empresária (811), Cooperativa (354), Fundação Privada
+  (228), Empresário Individual (54), Serviço Social Autônomo (22).
+  **(1) OSCs/associações e fundações executoras** (maior massa e o ciclo MROSC
+  inteiro); **(2) cooperativas e empresas executoras** (mesmo fluxo, dor
+  idêntica de prestação de contas); **(3) assessorias que gerem carteiras de
+  terceiros como CANAL**. Prefeituras e consórcios **saem do alvo** — viram, no
+  máximo, a contraparte do instrumento.
+  *(A decisão anterior — "prefeituras primeiro" — foi revertida: estava
+  ancorada no escopo errado.)*
 - **Escopo simples (18/07)**: **sem Sargaço, sem pdf-render, sem assinatura A1**.
   Dossiê = pasta local com sha256 e prazo de guarda; saída de documento =
   markdown/HTML que o usuário cola ou imprime. **Notificação = Seriema
