@@ -93,20 +93,34 @@ def _do_eml(dir_: Path) -> list[bytes]:
 
 
 def _do_imap() -> list[bytes]:
+    """Lê a caixa em READ-ONLY, buscando só e-mails dos remetentes da allowlist
+    dentro de uma janela (TUIU_IMAP_DIAS, default 30). NÃO marca nada como lido —
+    a idempotência é por Message-ID no nosso banco. Seguro até na INBOX pessoal."""
+    from datetime import date, timedelta
+
+    from parser_email import REMETENTES_OK
+
     host, user, senha = (os.environ.get(k, "") for k in ("TUIU_IMAP_HOST", "TUIU_IMAP_USER", "TUIU_IMAP_PASS"))
     if not (host and user and senha):
         return []
     pasta = os.environ.get("TUIU_IMAP_FOLDER", "INBOX")
+    dias = int(os.environ.get("TUIU_IMAP_DIAS", "30"))
+    desde = (date.today() - timedelta(days=dias)).strftime("%d-%b-%Y")
+
     brutos: list[bytes] = []
+    vistos: set[bytes] = set()
     with imaplib.IMAP4_SSL(host) as m:
         m.login(user, senha)
-        m.select(pasta)
-        _, dados = m.search(None, "UNSEEN")
-        for num in (dados[0].split() if dados and dados[0] else []):
-            _, msg = m.fetch(num, "(RFC822)")
-            if msg and msg[0]:
-                brutos.append(msg[0][1])
-                m.store(num, "+FLAGS", "\\Seen")
+        m.select(pasta, readonly=True)  # READ-ONLY: nunca altera o estado da caixa
+        for dominio in sorted(REMETENTES_OK):
+            _, dados = m.search(None, "SINCE", desde, "FROM", dominio)
+            for num in (dados[0].split() if dados and dados[0] else []):
+                if num in vistos:
+                    continue
+                vistos.add(num)
+                _, msg = m.fetch(num, "(RFC822)")
+                if msg and msg[0]:
+                    brutos.append(msg[0][1])
     return brutos
 
 
