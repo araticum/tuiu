@@ -41,9 +41,12 @@ def main():
     for nome, (r, conf, tipo, cnpjs) in res.items():
         print(f"  {nome}: {r} (confiavel={conf}, tipo={tipo}, cnpj={cnpjs})")
     # asserções
-    phishing = [v for k, v in res.items() if "phishing" in k]
-    if phishing and phishing[0][0] != "suspeito":
+    def _res(sub):
+        return next((v for k, v in res.items() if sub in k), None)
+    if (_res("phishing") or ("",))[0] != "suspeito":
         print("FALHOU: phishing deveria ser suspeito"); ok = False
+    if (_res("offtopic") or ("",))[0] != "irrelevante":
+        print("FALHOU: off-topic de remetente confiavel deveria ser irrelevante"); ok = False
     if n_inbox != 2:
         print(f"FALHOU: esperava 2 eventos inbox, veio {n_inbox}"); ok = False
     if any(r[0] == "atribuido" and not r[1] for r in res.values()):
