@@ -39,10 +39,32 @@ def main():
     cnpjs = ["".join(c for c in x if c.isdigit()) for x in args.cnpj] or [
         d.name for d in sorted(snap.iterdir()) if d.is_dir() and (d / "carteira.json").exists()]
 
+    # dirigentes cadastrados (PF): no MROSC, dirigente impedido contamina a entidade
+    pessoas: dict[str, list] = {}
+    try:
+        sys.path.insert(0, str(RAIZ / "backend"))
+        from app.db import conectar
+        with conectar() as con:
+            for doc, cpf, nome, papel in con.execute(
+                    "SELECT doc_cliente, cpf, nome, papel FROM clientes_pessoas WHERE ativo"):
+                pessoas.setdefault(doc, []).append({"cpf": cpf, "nome": nome, "papel": papel})
+    except Exception as exc:  # noqa: BLE001 — sem banco, segue só com a entidade
+        print(f"  (dirigentes não consultados: {exc})")
+
     for cnpj in cnpjs:
         r = consultar(cnpj)
         r["coletado_em"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         r["disponivel"] = True
+
+        r["dirigentes"] = []
+        for p in pessoas.get(cnpj, []):
+            rp = consultar(p["cpf"])
+            r["dirigentes"].append({**p, "impedido": rp["impedido"],
+                                    "fontes": {k: v["registros"] for k, v in rp["fontes"].items()}})
+            if rp["impedido"]:
+                r["impedido"] = True
+                r.setdefault("avisos", []).append(
+                    f"dirigente {p['nome']} ({p['papel'] or 'sem papel'}) consta em cadastro de sanção")
         (snap / cnpj).mkdir(parents=True, exist_ok=True)
         (snap / cnpj / "regularidade.json").write_text(
             json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")

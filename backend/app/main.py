@@ -42,6 +42,28 @@ def fila_triar(payload: dict):
                  payload.get("nota"), payload.get("operador"))
 
 
+@app.get("/api/cliente/{doc}")
+def cliente_ficha(doc: str):
+    try:
+        from app.cliente_ficha import montar
+        return {"disponivel": True, **montar(doc)}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc)}
+
+
+@app.post("/api/cliente/{doc}/diario")
+def cliente_anotar(doc: str, payload: dict):
+    from app.cliente_ficha import anotar
+    return anotar(doc, payload.get("texto", ""), payload.get("tipo", "nota"),
+                  payload.get("autor"), payload.get("referencia"))
+
+
+@app.post("/api/cliente/{doc}/pessoa")
+def cliente_pessoa(doc: str, payload: dict):
+    from app.cliente_ficha import cadastrar_pessoa
+    return cadastrar_pessoa(doc, payload.get("cpf", ""), payload.get("nome", ""), payload.get("papel"))
+
+
 @app.get("/api/clientes")
 def clientes():
     try:
