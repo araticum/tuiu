@@ -37,6 +37,8 @@
 <header>
   <h1 id="nome">carregando…</h1>
   <a href="/fila.html">⚡ Fila</a> <a href="/">Cockpit</a>
+  <a id="rel" href="#" target="_blank">📄 Relatório do mês</a>
+  <a id="rel90" href="#" target="_blank">90 dias</a>
 </header>
 <div class="sub" id="sub"></div>
 <div class="kpis" id="kpis"></div>
@@ -75,6 +77,9 @@
 const doc = new URLSearchParams(location.search).get("doc") || "20069629000103";
 const dbr = s => s ? s.split("-").reverse().join("/") : "sem data";
 const dth = s => s ? new Date(s).toLocaleString("pt-BR") : "";
+
+document.getElementById("rel").href = `/api/relatorio/${doc}?dias=30`;
+document.getElementById("rel90").href = `/api/relatorio/${doc}?dias=90`;
 
 function carregar(){
   fetch(`/api/cliente/${doc}`).then(r=>r.json()).then(f=>{
