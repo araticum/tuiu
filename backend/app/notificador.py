@@ -37,6 +37,12 @@ ICONE = {"novo": "🆕", "mudanca": "🔔", "incremento": "➕"}
 
 
 def mensagem(ev: dict) -> str:
+    if ev.get("origem") == "inbox":
+        det = ev.get("detalhe") or {}
+        prazos = (det.get("prazos") or []) if isinstance(det, dict) else []
+        linha_prazo = f"\nPrazo citado: {', '.join(prazos)}" if prazos else ""
+        return (f"📩 {ev['ente']}\n{ev['rotulo']}\n\"{(ev['para'] or '')[:120]}\"{linha_prazo}\n"
+                f"(notificação do Transferegov por e-mail)\n— Tuiú")
     ic = ICONE.get(ev["tipo"], "🔔")
     if ev["tipo"] == "mudanca":
         corpo = f"{ev['rotulo']}\n{ev['de']} → {ev['para']}"
@@ -87,10 +93,12 @@ def despachar() -> dict:
     with conectar() as con:
         # eventos ainda sem NENHUMA entrega
         eventos = con.execute(
-            "SELECT id, cnpj, ente, dominio, chave, rotulo, tipo, de, para, snapshot::text"
+            "SELECT id, cnpj, ente, dominio, chave, rotulo, tipo, de, para, snapshot::text, origem, detalhe"
             " FROM eventos e WHERE NOT EXISTS (SELECT 1 FROM entregas x WHERE x.evento_id=e.id)"
+            "   AND cnpj <> 'nao_atribuido'"
             " ORDER BY id").fetchall()
-        cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo", "de", "para", "snapshot"]
+        cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo", "de", "para",
+                "snapshot", "origem", "detalhe"]
         for row in eventos:
             ev = dict(zip(cols, row))
             msg = mensagem(ev)
