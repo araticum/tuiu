@@ -18,3 +18,6 @@ data/diagnosticos/
 # perfil e leituras da sessao do operador (nunca versionar)
 .perfil-*/
 data/sessao/
+
+# relatorios entregues (dado de cliente)
+data/relatorios/
