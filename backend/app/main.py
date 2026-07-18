@@ -25,6 +25,32 @@ def cockpit():
     return montar_cockpit()
 
 
+@app.get("/api/fila")
+def fila(abertos: bool = True, cliente: str | None = None, so_clientes: bool = True):
+    try:
+        from app.fila import montar
+        return {"disponivel": True, **montar(apenas_abertos=abertos, cliente=cliente,
+                                             apenas_clientes=so_clientes)}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "itens": []}
+
+
+@app.post("/api/fila/triar")
+def fila_triar(payload: dict):
+    from app.fila import triar
+    return triar(payload.get("chave", ""), payload.get("status", ""),
+                 payload.get("nota"), payload.get("operador"))
+
+
+@app.get("/api/clientes")
+def clientes():
+    try:
+        from app.clientes import listar
+        return listar()
+    except Exception as exc:  # noqa: BLE001
+        return {"clientes": [], "erro": str(exc)}
+
+
 @app.get("/api/prestacao/{cnpj}")
 def prestacao(cnpj: str):
     from app.prestacao import checklist
