@@ -42,6 +42,17 @@ def fila_triar(payload: dict):
                  payload.get("nota"), payload.get("operador"))
 
 
+@app.get("/api/relatorio/{doc}")
+def relatorio(doc: str, dias: int = 30, formato: str = "md"):
+    from fastapi.responses import PlainTextResponse
+
+    from app.relatorio_cliente import markdown, montar
+    dados = montar(doc, dias)
+    if formato == "json":
+        return dados
+    return PlainTextResponse(markdown(dados), media_type="text/markdown; charset=utf-8")
+
+
 @app.get("/api/cliente/{doc}")
 def cliente_ficha(doc: str):
     try:
