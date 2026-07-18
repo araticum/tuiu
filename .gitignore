@@ -11,3 +11,6 @@ __pycache__/
 
 # logs de execução
 ops/logs/
+
+# diagnosticos de prospects (dado publico, mas nao versionar)
+data/diagnosticos/
