@@ -1,0 +1,33 @@
+# Bootstrap com tela (noVNC) — roda só quando é preciso criar/renovar a sessão.
+#
+#   docker compose -f ops/sessao/compose.bootstrap.yaml up --build
+#   ssh -L 6080:127.0.0.1:6080 pedro@10.0.0.42      # do seu computador
+#   abrir http://localhost:6080/vnc.html            # logar ali dentro
+#
+# Ao detectar a área autenticada, salva o estado no MESMO volume que o loop usa
+# e encerra. Depois é só subir o compose.yaml normal (headless, sem tela).
+#
+# A porta fica presa em 127.0.0.1 do host: só se chega por túnel SSH.
+
+services:
+  bootstrap:
+    build:
+      context: ../..
+      dockerfile: ops/sessao/Dockerfile.bootstrap
+    container_name: tuiu-bootstrap
+    environment:
+      TUIU_BOOTSTRAP_ESPERA: "900"       # 15 min para o login
+      TUIU_SESSAO_ESTADO: /app/data/sessao/storage_state.json
+    ports:
+      - "127.0.0.1:6080:6080"            # noVNC, só loopback
+    volumes:
+      - sessao_dados:/app/data/sessao    # mesmo volume do loop
+    shm_size: "1gb"                      # Chrome com tela precisa de shm
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"                        # roda uma vez e sai
+
+volumes:
+  sessao_dados:
+    external: true
+    name: ${TUIU_VOLUME_SESSAO:-sessao_sessao_dados}
