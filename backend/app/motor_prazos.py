@@ -141,6 +141,94 @@ def _marcos_especiais(con, cnpj: str, ente: str, carteira: dict, hoje: date) -> 
     return marcos
 
 
+def _linhas_gz(caminho: Path):
+    if not caminho.exists():
+        return
+    import gzip
+    with gzip.open(caminho, "rt", encoding="utf-8") as fh:
+        for l in fh:
+            yield json.loads(l)
+
+
+def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date) -> list[dict]:
+    """Prazos do CICLO NOVO (g2) — a fonte que importa para o TERCEIRO EXECUTOR,
+    que normalmente não tem estoque no detru nem transferência especial."""
+    marcos: list[dict] = []
+    pdir = sub / "parcerias"
+
+    props = {p["id_proposta"]: p for p in _linhas_gz(pdir / "proposta.jsonl.gz")}
+    if not props:
+        return marcos
+
+    # 1) Cronograma FÍSICO: fim de cada etapa pactuada (meta -> etapas)
+    for m in _linhas_gz(pdir / "meta-proposta.jsonl.gz"):
+        p = props.get(m.get("id_proposta")) or {}
+        for e in (m.get("etapas_proposta") or []):
+            try:
+                fim = date.fromisoformat(str(e.get("dt_fim"))[:10])
+            except (ValueError, TypeError):
+                continue
+            marcos.append({
+                "cnpj": cnpj, "ente": ente, "fonte": "g2",
+                "instrumento": f"{p.get('id_proposta')}/{e.get('cd_etapa')}",
+                "tipo": "etapa_cronograma", "data_limite": fim,
+                "descricao": f"Fim da etapa {e.get('cd_etapa')} — {(e.get('nm_etapa') or '')[:70]}",
+                "base_legal": "cronograma físico do plano de trabalho (Transferegov)",
+                "farol": _farol(fim, hoje),
+                "detalhes": {"meta": m.get("nm_meta"), "situacao_proposta": p.get("situacao_proposta")},
+            })
+
+    # 2) Cronograma de DESEMBOLSO: parcela prevista (mês/ano -> fim do mês)
+    import calendar
+    for c in _linhas_gz(pdir / "cronograma-desembolso.jsonl.gz"):
+        mes, ano = c.get("nr_ref_mes_data_especif"), c.get("nr_ref_ano_data_especif")
+        if not (mes and ano):
+            continue
+        try:
+            venc = date(int(ano), int(mes), calendar.monthrange(int(ano), int(mes))[1])
+        except (ValueError, TypeError):
+            continue
+        p = props.get(c.get("id_proposta")) or {}
+        marcos.append({
+            "cnpj": cnpj, "ente": ente, "fonte": "g2",
+            "instrumento": str(c.get("id_proposta_cronograma_item")),
+            "tipo": "parcela_prevista", "data_limite": venc,
+            "descricao": f"Parcela prevista de R$ {float(c.get('vl_cronograma_desembolso') or 0):,.2f}"
+                         f" ({c.get('origem_recurso') or '—'})".replace(",", "X").replace(".", ",").replace("X", "."),
+            "base_legal": "cronograma de desembolso pactuado (Transferegov)",
+            "farol": _farol(venc, hoje),
+            "detalhes": {"proposta": p.get("id_proposta"), "situacao": p.get("situacao_proposta")},
+        })
+
+    # 3) Proposta parada em análise/elaboração: ação de cobrança (sem prazo legal)
+    for p in props.values():
+        sit = str(p.get("situacao_proposta") or "")
+        if "Análise" in sit or "Analise" in sit:
+            try:
+                envio = date.fromisoformat(str(p.get("dt_envio_analise"))[:10])
+                dias = (hoje - envio).days
+            except (ValueError, TypeError):
+                continue
+            if dias >= 60:
+                marcos.append({
+                    "cnpj": cnpj, "ente": ente, "fonte": "g2", "instrumento": str(p["id_proposta"]),
+                    "tipo": "proposta_parada", "data_limite": None,
+                    "descricao": f"Proposta {p['id_proposta']} em análise há {dias} dias — cobrar o concedente",
+                    "base_legal": "acompanhamento da análise (sem prazo legal fixo)",
+                    "farol": "acao_imediata" if dias >= 180 else "atencao",
+                    "detalhes": {"dias_em_analise": dias, "objeto": (p.get("ds_objeto") or "")[:120]},
+                })
+        elif "Complementa" in sit:
+            marcos.append({
+                "cnpj": cnpj, "ente": ente, "fonte": "g2", "instrumento": str(p["id_proposta"]),
+                "tipo": "complementacao_pendente", "data_limite": None,
+                "descricao": f"Proposta {p['id_proposta']} aguardando COMPLEMENTAÇÃO — responder ao órgão",
+                "base_legal": "diligência do concedente (prazo fixado no parecer)",
+                "farol": "acao_imediata", "detalhes": {"situacao": sit},
+            })
+    return marcos
+
+
 def _marco_defeso(con, cnpj: str, ente: str, hoje: date) -> list[dict]:
     regra = regra_vigente(con, "defeso_eleitoral", "geral", hoje)
     if not regra:
@@ -171,6 +259,7 @@ def gerar_marcos(hoje: date | None = None) -> dict:
             cnpj = carteira["cnpj"]
             ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
             todos += _marcos_legado(con, cnpj, ente, sub, hoje)
+            todos += _marcos_g2(cnpj, ente, sub, hoje)          # ciclo novo: o que serve ao terceiro
             todos += _marcos_especiais(con, cnpj, ente, carteira, hoje)
             todos += _marco_defeso(con, cnpj, ente, hoje)
 
@@ -203,9 +292,11 @@ def gerar_alertas(hoje: date | None = None) -> int:
             " FROM marcos WHERE farol <> 'ok'"
         ).fetchall()
         for mid, ente, tipo, instr, desc, base, limite, farol in rows:
-            if farol == "acao_imediata":
+            # Sem data-limite NÃO implica ação imediata: há marcos de
+            # acompanhamento (proposta parada) com farol 'atencao' e sem prazo.
+            if limite is None:
                 gatilho = "vencido"
-                cabeca = "🔴 AÇÃO IMEDIATA"
+                cabeca = "🔴 AÇÃO IMEDIATA" if farol == "acao_imediata" else "🟡 ACOMPANHAR"
             else:
                 dias = (limite - hoje).days
                 if dias < 0:
