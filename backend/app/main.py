@@ -334,4 +334,43 @@ def notificacoes_gravar(corpo: dict, request: Request):
     return {"ok": True, **r, **estado_notificacoes()}
 
 
+@app.get("/api/normas")
+def normas(pendentes: bool = False):
+    try:
+        with conectar() as con:
+            sql = ("SELECT id, publicado_em, secao, identifica, orgao, ementa, termos,"
+                   " tratada, tratada_em, tratada_por, nota FROM normas_vistas")
+            if pendentes:
+                sql += " WHERE NOT tratada"
+            sql += " ORDER BY publicado_em DESC, id DESC LIMIT 200"
+            cols = ["id", "publicado_em", "secao", "identifica", "orgao", "ementa", "termos",
+                    "tratada", "tratada_em", "tratada_por", "nota"]
+            linhas = [dict(zip(cols, r)) for r in con.execute(sql)]
+            n = con.execute("SELECT count(*) FROM normas_vistas WHERE NOT tratada").fetchone()[0]
+            m = con.execute("SELECT ate, atualizado_em FROM vigia_marcador"
+                            " WHERE fonte='DOU'").fetchone()
+        return {"disponivel": True, "normas": linhas, "pendentes": n,
+                "varrido_ate": m[0].isoformat() if m else None,
+                "ultima_varredura": m[1].isoformat() if m else None}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "normas": []}
+
+
+@app.post("/api/normas/{norma_id}/tratar")
+def norma_tratar(norma_id: int, corpo: dict, request: Request):
+    """Marca que ALGUÉM avaliou o impacto em `regras_normativas`. O sistema não
+    decide isso sozinho: versionar regra é ato consciente."""
+    with conectar() as con:
+        cur = con.execute(
+            "UPDATE normas_vistas SET tratada=%s, tratada_em=now(), tratada_por=%s, nota=%s"
+            " WHERE id=%s RETURNING id",
+            (bool(corpo.get("tratada", True)), request.state.usuario["login"],
+             (corpo.get("nota") or "").strip()[:500] or None, norma_id))
+        achou = cur.fetchone()
+        con.commit()
+    if not achou:
+        raise HTTPException(404, "norma nao encontrada")
+    return {"ok": True}
+
+
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))

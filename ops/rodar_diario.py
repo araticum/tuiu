@@ -120,6 +120,11 @@ def main():
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])
         if os.environ.get("TUIU_IMAP_HOST"):
             _passo(fh, "inbox (e-mail -> eventos)", [py, "ingest/inbox/coletar_inbox.py"])
+        # Fonte de TERCEIRO e instavel (o INLABS cai). Nao-essencial: uma
+        # queda deles nao pode derrubar a vigilancia de prazo dos clientes.
+        # A falha aparece no log e a norma fica pendente no console.
+        _passo(fh, "vigilia normativa (DOU)", [py, "ingest/normas/vigia_dou.py"],
+               essencial=False)
         _passo(fh, "notificador (outbox/webhook/whatsapp)", [py, "backend/app/notificador.py"])
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
