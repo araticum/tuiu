@@ -43,11 +43,17 @@ nome deles) e **controladora** dos dados dos próprios usuários do console.
 | login, nome do operador | `usuarios` | acesso ao console | interesse legítimo | enquanto a conta existir; conta inativa expurga em 5 anos | operador | não |
 | senha (hash scrypt + sal) | `usuarios.senha_hash` | autenticação | interesse legítimo | idem | ninguém (irreversível) | não |
 | IP, user-agent | `sessoes`, `acessos_log` | segurança do acesso, freio de força bruta | interesse legítimo | sessão: 7 d após expirar · tentativa: 180 d | operador | não |
-| CPF e nome de dirigente (PF) | `clientes_pessoas` | conferir impedimento do dirigente (MROSC — dirigente impedido contamina a entidade) | execução de contrato | enquanto durar a relação + 5 anos | operador e o próprio cliente | **sim** — CPF ao Portal da Transparência (CGU) na consulta de sanção |
+| **CPF MASCARADO** e nome de dirigente (PF) | `clientes_pessoas` | conferir impedimento do dirigente (MROSC — dirigente impedido contamina a entidade) | execução de contrato | enquanto durar a relação + 5 anos | operador e o próprio cliente | **sim** — o NOME vai ao Portal da Transparência (CGU); o CPF completo **não temos** |
 | CNPJ, razão social, UF, município | `clientes` | identificar quem atendemos | execução de contrato | idem | operador e o próprio cliente | sim — CNPJ à CGU |
 | texto livre de atendimento | `diario_cliente` | histórico do serviço prestado | execução de contrato | idem | operador | não |
 | nome de beneficiário de pagamento | `data/recortes/**/extrato-bancario.jsonl.gz` | **nenhuma** | — | **mascarado na entrada desde 19/07/2026** | — | não |
 | e-mail reencaminhado do Transferegov | `eventos` (origem `inbox`) | captar recado privado do portal | execução de contrato | 5 anos | operador | não |
+
+**CPF de dirigente: guardamos apenas o MASCARADO** (`***790718**`, 6 dígitos), como vem do dado
+aberto da Receita — não obtemos nem armazenamos o documento completo (D1: menos dado para o
+mesmo valor). A consulta de sanção passou a ser por **nome**, e os dígitos visíveis servem só
+para descartar homônimo; sanção com o mesmo nome e sem CPF no registro vira `a_confirmar` para
+decisão humana, nunca impedimento automático.
 
 **Dado que deliberadamente NÃO coletamos:** senha gov.br de cliente (impersonação descartada —
 ver `docs/sessao-operador.md`), CAUC do ente (é do ente, fora de escopo), dado de beneficiário

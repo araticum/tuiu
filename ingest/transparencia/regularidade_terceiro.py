@@ -96,3 +96,70 @@ if __name__ == "__main__":
             print(f"   {rota}: {f['registros']} registro(s)")
             for d in f["detalhes"]:
                 print(f"      - {d['motivo']} | {d['orgao']} | {d['inicio']}–{d['fim'] or '—'}")
+
+
+def _digitos_visiveis(cpf_mascarado: str) -> str:
+    """"***790718**" -> "790718". Só os dígitos que a Receita deixa à mostra."""
+    return "".join(c for c in str(cpf_mascarado or "") if c.isdigit())
+
+
+def _mesmo_nome(a: str, b: str) -> bool:
+    import unicodedata
+
+    def n(s):
+        s = unicodedata.normalize("NFD", (s or "").upper())
+        return " ".join("".join(c for c in s if c.isalnum() or c.isspace()).split())
+    return bool(n(a)) and n(a) == n(b)
+
+
+def consultar_pessoa(nome: str, cpf_mascarado: str = "") -> dict:
+    """Impedimento de DIRIGENTE (PF), buscando por NOME.
+
+    Por que não por CPF: o QSA da Receita entrega o CPF **mascarado**
+    ("***790718**"), e `codigoSancionado` exige o documento inteiro — mandar 6
+    dígitos devolve vazio, o que pareceria "nada consta" sem ter consultado.
+
+    O filtro `nomeSancionado` É honrado pela API (testado: nome inexistente
+    devolve vazio em vez de despejar a 1ª página, que é o sintoma da armadilha
+    5). Mas nome sozinho pega HOMÔNIMO — e dizer a um cliente que seu presidente
+    está sancionado por engano é um estrago sério. Então:
+
+      - o registro só conta como CASADO se os dígitos visíveis do CPF baterem;
+      - se a sanção não expõe CPF, vira `a_confirmar` (humano decide), nunca
+        impedimento automático.
+    """
+    chave = _chave()
+    visiveis = _digitos_visiveis(cpf_mascarado)
+    saida = {"nome": nome, "cpf": cpf_mascarado, "impedido": False,
+             "a_confirmar": [], "fontes": {}, "avisos": []}
+
+    for rota in ("ceis", "cnep"):
+        lote, erro = _get(rota, {"nomeSancionado": nome, "pagina": 1}, chave)
+        if erro:
+            saida["avisos"].append(f"{rota}: {erro}")
+            continue
+        casados, confirmar = [], []
+        for r in lote or []:
+            if not _mesmo_nome(_nome_do_registro(r), nome):
+                continue          # a API casa por prefixo/parcial; exigimos igual
+            doc = _doc_do_registro(r)
+            if visiveis and doc and visiveis in doc:
+                casados.append(r)
+            elif not doc:
+                confirmar.append(r)
+        saida["fontes"][rota] = {"registros": len(casados), "a_confirmar": len(confirmar)}
+        if casados:
+            saida["impedido"] = True
+        saida["a_confirmar"] += [
+            {"rota": rota, "motivo": (r.get("motivo") or "")[:180]} for r in confirmar]
+    return saida
+
+
+def _nome_do_registro(r: dict) -> str:
+    for caminho in (("sancionado", "nome"), ("pessoa", "nome"), ("pessoaFisica", "nome")):
+        v = r
+        for k in caminho:
+            v = (v or {}).get(k) if isinstance(v, dict) else None
+        if v:
+            return str(v)
+    return ""

@@ -129,9 +129,12 @@ def main():
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:
-            # Depende do dump g2 COMPLETO (data/parcerias/), que nem toda máquina
-            # tem — e é prospecção nossa, não serviço de cliente.
-            _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"],
+            # Prospeccao NOSSA, nao servico de cliente -> nao-essencial.
+            # `prospects.py` ranqueia ENTIDADES PRIVADAS, que e o publico do Tuiu
+            # desde a correcao de escopo de 18/07. O `radar_comercial --so-municipios`
+            # ranqueia PREFEITURAS: sobrou do escopo antigo e ficou rodando todo dia
+            # produzindo lista de quem nao e nosso cliente.
+            _passo(fh, "prospeccao interna (entidades privadas)", [py, "ferramentas/prospects.py"],
                    essencial=False)
         _log(fh, "=== cadeia concluída ===")
 
