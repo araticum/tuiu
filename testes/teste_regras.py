@@ -24,7 +24,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "backend"))
 
 from app.db import conectar, migrar, regra_vigente  # noqa: E402
-from app.motor_prazos import CORTE_REGIME_NOVO, _farol, _marcos_g2  # noqa: E402
+from app.motor_prazos import (CORTE_REGIME_NOVO, _farol, _marco_analise_parada,  # noqa: E402
+                              _marcos_g2)
 from app.prestacao import _regime  # noqa: E402
 
 
@@ -193,3 +194,45 @@ def test_todo_marco_carrega_base_legal(recorte):
     for m in _marcos_g2("00000000000000", "Teste", recorte, date.today()):
         assert m["base_legal"], f"marco {m['tipo']} sem base legal"
         assert m["descricao"], f"marco {m['tipo']} sem descrição"
+
+
+# ------------------------------------ prazo que corre contra o CONCEDENTE (art. 97)
+
+def _historico(dir_cnpj: Path, linhas: list[tuple]):
+    leg = dir_cnpj / "legado"
+    leg.mkdir(parents=True, exist_ok=True)
+    with open(leg / "historico_situacao.csv", "w", newline="", encoding="utf-8-sig") as fh:
+        fh.write("NR_CONVENIO;DIA_HISTORICO_SIT;HISTORICO_SIT;DIAS_HISTORICO_SIT\n")
+        for nr, quando, sit, dias in linhas:
+            fh.write(f"{nr};{quando};{sit};{dias}\n")
+
+
+def test_analise_parada_so_conta_o_que_passou_do_prazo(con, tmp_path):
+    """O art. 97 dá 180 dias (convencional) ao órgão. Abaixo disso não há o que
+    cobrar; o corte usa o prazo MAIOR porque o dado não diz a modalidade."""
+    _historico(tmp_path, [
+        ("111", "01/01/2013 10:00:00", "PRESTACAO_CONTAS_EM_ANALISE", 4878),
+        ("222", "01/01/2024 10:00:00", "PRESTACAO_CONTAS_ENVIADA_ANALISE", 200),
+        ("333", "01/06/2026 10:00:00", "PRESTACAO_CONTAS_EM_ANALISE", 30),    # dentro do prazo
+        ("444", "01/01/2020 10:00:00", "EM_EXECUCAO", 2000),                  # não é análise
+        ("555", "01/01/2020 10:00:00", "AGUARDANDO_PRESTACAO_CONTAS", 2000),  # bola do CLIENTE
+    ])
+    marcos = _marco_analise_parada(con, "00000000000000", "Teste", tmp_path, date.today())
+    assert len(marcos) == 1, "sai UM marco por cliente, não um por instrumento"
+    d = marcos[0]["detalhes"]
+    assert d["total"] == 2, "só 111 e 222 passaram dos 180 dias"
+    assert d["piores"][0]["instrumento"] == "111", "ordena do mais parado para o menos"
+    assert d["alem_da_prorrogacao"] == 1, "só o de 4878 dias passa de 360 (180 prorrogado)"
+
+
+def test_analise_parada_cobra_o_orgao_e_nao_o_cliente(con, tmp_path):
+    _historico(tmp_path, [("999", "01/01/2015 10:00:00", "PRESTACAO_CONTAS_EM_ANALISE", 3000)])
+    m = _marco_analise_parada(con, "00000000000000", "Teste", tmp_path, date.today())[0]
+    assert "art. 97" in m["base_legal"]
+    assert "do órgão, não do convenente" in m["base_legal"], "a quem o prazo pertence é o ponto"
+    assert m["farol"] == "atencao", "é alavanca de cobrança, não emergência do cliente"
+    assert m["data_limite"] is None
+
+
+def test_sem_historico_nao_inventa_marco(con, tmp_path):
+    assert _marco_analise_parada(con, "00000000000000", "Teste", tmp_path, date.today()) == []

@@ -97,6 +97,65 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
     return marcos
 
 
+ANALISE_DO_CONCEDENTE = ("PRESTACAO_CONTAS_ENVIADA_ANALISE", "PRESTACAO_CONTAS_EM_ANALISE")
+
+
+def _marco_analise_parada(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> list[dict]:
+    """O outro lado do prazo: quando a prestação já foi entregue, o art. 97 passa
+    a correr contra o CONCEDENTE (60 dias informatizado, 180 convencional).
+
+    Medido na carteira de 50: de 1.004 prestações paradas na análise, 953 (95%)
+    já estouraram o prazo do governo — a mais antiga há 4.878 dias. É o inverso
+    do que o motor dizia antes de hoje, quando acusava atraso do cliente.
+
+    Sai UM marco por cliente, não um por instrumento: 817 itens não são fila de
+    trabalho, são fato de carteira. O operador recebe uma tarefa — cobrar — e o
+    detalhe fica em `detalhes`.
+
+    O corte é o prazo CONVENCIONAL (o maior), porque o dado não diz qual
+    modalidade de análise se aplica. Acusar o governo de atraso pede o limite
+    mais conservador.
+    """
+    hist = dir_cnpj / "legado" / "historico_situacao.csv"
+    if not hist.exists():
+        return []
+    regra = regra_vigente(con, "prazo_analise_convencional", "completo_pc33", hoje)
+    limite = int((regra or {}).get("valor", {}).get("dias") or 180)
+    base = (regra or {}).get("base_legal", "PC 33/2023, art. 97")
+
+    paradas = []
+    with open(hist, encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh, delimiter=";"):
+            if (row.get("HISTORICO_SIT") or "").strip() not in ANALISE_DO_CONCEDENTE:
+                continue
+            try:
+                dias = int(row.get("DIAS_HISTORICO_SIT") or 0)
+            except ValueError:
+                continue
+            if dias > limite:
+                paradas.append({"instrumento": row.get("NR_CONVENIO"), "dias": dias,
+                                "desde": row.get("DIA_HISTORICO_SIT"),
+                                "situacao": row.get("HISTORICO_SIT")})
+    if not paradas:
+        return []
+
+    paradas.sort(key=lambda p: -p["dias"])
+    pior = paradas[0]
+    alem_da_prorrogacao = [p for p in paradas if p["dias"] > limite * 2]
+    return [{
+        "cnpj": cnpj, "ente": ente, "fonte": "legado", "instrumento": None,
+        "tipo": "analise_parada_concedente", "data_limite": None,
+        "descricao": (f"{len(paradas)} prestação(ões) entregues e paradas na análise do concedente "
+                      f"há mais de {limite} dias — a pior há {pior['dias']} dias "
+                      f"(instrumento {pior['instrumento']}, desde {pior['desde']})"),
+        "base_legal": f"{base} — o prazo de análise é do órgão, não do convenente",
+        "farol": "atencao",
+        "detalhes": {"limite_dias": limite, "total": len(paradas),
+                     "alem_da_prorrogacao": len(alem_da_prorrogacao),
+                     "piores": paradas[:10]},
+    }]
+
+
 def _marcos_especiais(con, cnpj: str, ente: str, carteira: dict, hoje: date) -> list[dict]:
     marcos = []
     esp = carteira.get("especiais", {})
@@ -307,6 +366,7 @@ def gerar_marcos(hoje: date | None = None) -> dict:
                 continue
             ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
             todos += _marcos_legado(con, cnpj, ente, sub, hoje)
+            todos += _marco_analise_parada(con, cnpj, ente, sub, hoje)
             todos += _marcos_g2(cnpj, ente, sub, hoje)          # ciclo novo: o que serve ao terceiro
             todos += _marcos_especiais(con, cnpj, ente, carteira, hoje)
             todos += _marco_defeso(con, cnpj, ente, hoje)

@@ -38,6 +38,8 @@ PROXIMO_PASSO = {
     "complementacao_pendente": "Responder a complementação exigida pelo órgão",
     "etapa_cronograma": "Executar/comprovar a etapa do cronograma físico",
     "parcela_prevista": "Conferir se a parcela foi liberada; cobrar se não saiu",
+    # o prazo estourado aqui e do ORGAO — a acao e cobrar, nao produzir
+    "analise_parada_concedente": "Cobrar decisão do concedente (art. 97) sobre as prestações paradas",
 }
 
 

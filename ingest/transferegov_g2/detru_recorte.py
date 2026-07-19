@@ -31,6 +31,7 @@ from recorte_ente import monitorados  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
 CACHE = RAIZ / "data" / "detru" / "cache"
+HISTORICO_ZIP = "siconv_historico_situacao.zip"
 
 
 def _digitos(v) -> str:
@@ -48,6 +49,13 @@ def _linhas_zip(nome_zip: str):
 def _data_br(s: str):
     try:
         return datetime.strptime(s.strip(), "%d/%m/%Y").date()
+    except (ValueError, AttributeError):
+        return None
+
+
+def _datahora_br(s: str):
+    try:
+        return datetime.strptime(s.strip(), "%d/%m/%Y %H:%M:%S")
     except (ValueError, AttributeError):
         return None
 
@@ -72,13 +80,39 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
         if p:
             convs[p["cnpj"]].append(row)
 
+    # Última situação registrada de cada instrumento. É daqui que sai HÁ QUANTO
+    # TEMPO a prestação está parada na análise do CONCEDENTE — o convenio.csv
+    # diz a situação atual, mas não desde quando. Sem isso não dá para saber que
+    # o prazo do art. 97 (60d informatizado / 180d convencional) estourou.
+    dono = {r.get("NR_CONVENIO"): c for c, linhas in convs.items() for r in linhas}
+    ultima_sit: dict[str, dict] = {}
+    if (CACHE / HISTORICO_ZIP).exists():
+        print("varredura de siconv_historico_situacao.csv…", flush=True)
+        for row in _linhas_zip(HISTORICO_ZIP):
+            nr = row.get("NR_CONVENIO")
+            if nr not in dono:
+                continue
+            quando = _datahora_br(row.get("DIA_HISTORICO_SIT"))
+            atual = ultima_sit.get(nr)
+            if quando and (atual is None or quando > atual["_quando"]):
+                ultima_sit[nr] = {
+                    "NR_CONVENIO": nr, "DIA_HISTORICO_SIT": row.get("DIA_HISTORICO_SIT"),
+                    "HISTORICO_SIT": row.get("HISTORICO_SIT"),
+                    "DIAS_HISTORICO_SIT": row.get("DIAS_HISTORICO_SIT"), "_quando": quando,
+                }
+    else:
+        print(f"  [sem {HISTORICO_ZIP} — sem histórico de situação nesta rodada]", flush=True)
+
     resultados = {}
     for cnpj in cnpjs:
         minhas_props = [p["row"] for p in props.values() if p["cnpj"] == cnpj]
         meus_convs = convs[cnpj]
+        historico = [{k: v for k, v in h.items() if not k.startswith("_")}
+                     for nr, h in ultima_sit.items() if dono.get(nr) == cnpj]
         destino = base_out / cnpj / "legado"
         destino.mkdir(parents=True, exist_ok=True)
-        for nome, linhas in (("proposta", minhas_props), ("convenio", meus_convs)):
+        for nome, linhas in (("proposta", minhas_props), ("convenio", meus_convs),
+                             ("historico_situacao", historico)):
             if linhas:
                 with open(destino / f"{nome}.csv", "w", newline="", encoding="utf-8-sig") as fh:
                     w = csv.DictWriter(fh, fieldnames=list(linhas[0].keys()), delimiter=";")

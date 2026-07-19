@@ -26,7 +26,9 @@ RAIZ = Path(__file__).resolve().parents[1]
 LOGS = RAIZ / "ops" / "logs"
 CACHE_DETRU = RAIZ / "data" / "detru" / "cache"
 DOWNLOADS = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov"
-ZIPS_DETRU = ["siconv_convenio.zip", "siconv_proposta.zip"]
+# o historico de situacao (102 MB) e o que diz HA QUANTO TEMPO a prestacao
+# esta parada na analise do concedente — sem ele nao da para acusar o art. 97
+ZIPS_DETRU = ["siconv_convenio.zip", "siconv_proposta.zip", "siconv_historico_situacao.zip"]
 IDADE_MAX_H = 20
 
 
