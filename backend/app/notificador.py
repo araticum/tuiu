@@ -26,6 +26,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import seriema  # noqa: E402
+from app.config import envio_externo_liberado  # noqa: E402
 from app.db import conectar  # noqa: E402
 
 WEBHOOK_URL = os.environ.get("TUIU_WEBHOOK_URL", "").strip()
@@ -80,8 +81,38 @@ def _registrar(con, evento_id: int, canal: str, endereco: str | None, msg: str,
     return cur.fetchone() is not None
 
 
+def _canais_liberados(con, cnpj: str) -> list[tuple[str, str]]:
+    """Destinos que PODEM receber agora. Duas travas em série por canal (a geral
+    e a do próprio canal) — ver app.config. A outbox não passa por aqui: ela é
+    registro interno, não contato com ninguém.
+
+    A carteira tem organizações reais que nunca pediram para receber nada, então
+    o padrão é lista vazia e ligar é ato deliberado, registrado em
+    `configuracoes_log`.
+    """
+    destinos: list[tuple[str, str]] = []
+
+    if envio_externo_liberado("whatsapp"):   # alcança o CLIENTE
+        destinos += con.execute(
+            "SELECT canal, endereco FROM destinatarios"
+            " WHERE ativo AND canal='whatsapp' AND cnpj IN (%s,'*')", (cnpj,)).fetchall()
+
+    if envio_externo_liberado("webhook"):    # sistema externo
+        destinos += con.execute(
+            "SELECT canal, endereco FROM destinatarios"
+            " WHERE ativo AND canal='webhook' AND cnpj IN (%s,'*')", (cnpj,)).fetchall()
+        if WEBHOOK_URL:
+            destinos.append(("webhook", WEBHOOK_URL))
+
+    if envio_externo_liberado("seriema") and seriema.configurado():
+        # grupo INTERNO de operação — não chega ao cliente
+        destinos.append(("seriema", "grupo-operacao"))
+
+    return destinos
+
+
 def despachar() -> dict:
-    contagem = {"outbox": 0, "webhook": 0, "whatsapp": 0}
+    contagem = {"outbox": 0, "webhook": 0, "whatsapp": 0, "seriema": 0, "so_outbox": 0}
     with conectar() as con:
         # eventos ainda sem NENHUMA entrega
         eventos = con.execute(
@@ -98,17 +129,17 @@ def despachar() -> dict:
             if _registrar(con, ev["id"], "outbox", None, msg, "pendente", None):
                 contagem["outbox"] += 1
 
-            dests = con.execute(
-                "SELECT canal, endereco FROM destinatarios WHERE ativo AND cnpj IN (%s,'*')",
-                (ev["cnpj"],)).fetchall()
-            if WEBHOOK_URL:
-                dests.append(("webhook", WEBHOOK_URL))
+            dests = _canais_liberados(con, ev["cnpj"])
+            if not dests:
+                contagem["so_outbox"] += 1
 
             for canal, endereco in dests:
                 if canal == "webhook":
                     ok, det = _post_json(endereco, {"evento": ev, "mensagem": msg})
                 elif canal == "whatsapp":
                     ok, det = _enviar_whatsapp(endereco, msg, f"evento-{ev['id']}")
+                elif canal == "seriema":
+                    ok, det = seriema.enviar_grupo(msg, chave_entrega=f"evento-{ev['id']}")
                 else:
                     ok, det = False, f"canal desconhecido: {canal}"
                 if _registrar(con, ev["id"], canal, endereco, msg,
@@ -120,7 +151,12 @@ def despachar() -> dict:
 
 def main():
     r = despachar()
-    print("entregas:", ", ".join(f"{k}={v}" for k, v in r.items()) or "nada novo")
+    print("entregas:", ", ".join(f"{k}={v}" for k, v in r.items() if k != "so_outbox") or "nada novo")
+    if r.get("so_outbox"):
+        # dizer isto em voz alta: silêncio de canal desligado não pode ser
+        # confundido com "não havia nada para avisar"
+        print(f"  {r['so_outbox']} evento(s) ficaram SÓ na outbox — envio externo desligado "
+              f"(ligue em /notificacoes.html)")
 
 
 if __name__ == "__main__":

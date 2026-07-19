@@ -15,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.carteira import listar_entes, snapshot_mais_recente
 from app.cockpit import montar as montar_cockpit
+from app.config import estado as estado_notificacoes
+from app.config import gravar as gravar_config
 from app.db import conectar
 
 app = FastAPI(title="Tuiú", version="0.2.0-cockpit")
@@ -214,6 +216,27 @@ def alertas():
             return {"disponivel": True, "alertas": [dict(zip(cols, r)) for r in rows]}
     except Exception as exc:  # noqa: BLE001
         return {"disponivel": False, "erro": str(exc), "alertas": []}
+
+
+@app.get("/api/notificacoes")
+def notificacoes():
+    try:
+        return {"disponivel": True, **estado_notificacoes()}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc)}
+
+
+@app.post("/api/notificacoes")
+def notificacoes_gravar(corpo: dict):
+    """Liga/desliga um canal. Só as chaves de notificação passam (app.config)."""
+    chave, valor = corpo.get("chave"), corpo.get("valor")
+    if chave is None or valor is None:
+        raise HTTPException(400, "informe `chave` e `valor`")
+    try:
+        r = gravar_config(str(chave), str(valor), quem=(corpo.get("quem") or "painel"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, **r, **estado_notificacoes()}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))
