@@ -199,3 +199,46 @@ def test_banco_recusa_cliente_sem_alcance():
 def test_criar_cliente_sem_doc_e_recusado_no_codigo():
     with pytest.raises(ValueError):
         auth.criar_usuario("pytest_ruim2", "X", SENHA, papel="cliente")
+
+
+# ------------------------------------------- RBAC: o metodo faz parte da permissao
+
+from app.main import PERMISSOES_CLIENTE, _cliente_pode  # noqa: E402
+
+
+@pytest.mark.parametrize("metodo,caminho,pode", [
+    # leitura da propria ficha: pode
+    ("GET", "/api/cliente/20069629000103", True),
+    ("GET", "/api/relatorio/20069629000103", True),
+    ("GET", "/api/prestacao/20069629000103", True),
+    # ESCRITA sob o MESMO prefixo: nao pode. Sem o metodo na permissao,
+    # "pode ver /api/cliente/" virava "pode gravar no nosso diario interno" —
+    # foi o que aconteceu na primeira versao (200, linha no banco).
+    ("POST", "/api/cliente/20069629000103/diario", False),
+    ("POST", "/api/cliente/20069629000103/pessoa", False),
+    # superficie de operador
+    ("GET", "/api/cockpit", False),
+    ("GET", "/api/fila", False),
+    ("POST", "/api/fila/triar", False),
+    ("GET", "/api/notificacoes", False),
+    ("POST", "/api/notificacoes", False),
+    ("GET", "/api/normas", False),
+    ("POST", "/api/normas/1/tratar", False),
+    ("GET", "/api/clientes", False),
+    # o proprio usuario
+    ("POST", "/api/senha", True),
+    ("POST", "/api/logout", True),
+    ("GET", "/api/sessao", True),
+    # metodo que ninguem previu
+    ("DELETE", "/api/cliente/20069629000103", False),
+    ("PUT", "/api/cliente/20069629000103", False),
+])
+def test_permissao_do_cliente_considera_o_metodo(metodo, caminho, pode):
+    assert _cliente_pode(metodo, caminho) is pode
+
+
+def test_permissao_de_cliente_nao_tem_escrita_em_dado_de_operacao():
+    """Invariante: fora de logout/senha, o papel cliente é SÓ LEITURA."""
+    escritas = [(m, p) for m, p in PERMISSOES_CLIENTE
+                if m != "GET" and p not in ("/api/logout", "/api/senha")]
+    assert not escritas, f"papel cliente ganhou escrita em {escritas}"

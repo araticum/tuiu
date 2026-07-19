@@ -28,12 +28,28 @@ app = FastAPI(title="Tuiú", version="0.3.0-console")
 # fechado, então esquecer de proteger uma rota nova não abre buraco.
 PUBLICO = {"/login.html", "/api/login", "/api/sessao"}
 
-# Rotas que um usuário de papel `cliente` alcança. Curta de propósito: rota nova
-# nasce FECHADA para cliente (D3 do gate de privacidade). O cockpit e a fila
-# ficam de fora porque mostram a carteira inteira.
-ROTAS_CLIENTE = ("/api/logout", "/api/senha", "/api/sessao",
-                 "/api/cliente/", "/api/relatorio/", "/api/prestacao/",
-                 "/cliente.html", "/login.html")
+# Permissões do papel `cliente`: (MÉTODO, prefixo). O método faz parte da
+# permissão — sem ele, "pode ver /api/cliente/" virava "pode escrever em
+# /api/cliente/{doc}/diario", que é o registro INTERNO de atendimento, e em
+# /api/cliente/{doc}/pessoa. Foi assim na primeira versão: um cliente gravou
+# no nosso diário e recebeu 200.
+#
+# Lista curta de propósito: rota nova nasce FECHADA para cliente (D3 do gate).
+# Cockpit e fila ficam de fora — mostram a carteira inteira.
+PERMISSOES_CLIENTE = (
+    ("GET", "/api/sessao"),
+    ("POST", "/api/logout"),
+    ("POST", "/api/senha"),        # trocar a própria senha
+    ("GET", "/api/cliente/"),      # só leitura da própria ficha
+    ("GET", "/api/relatorio/"),
+    ("GET", "/api/prestacao/"),
+    ("GET", "/cliente.html"),
+    ("GET", "/login.html"),
+)
+
+
+def _cliente_pode(metodo: str, caminho: str) -> bool:
+    return any(metodo == m and caminho.startswith(p) for m, p in PERMISSOES_CLIENTE)
 
 # Rotas cujo primeiro segmento após o prefixo é o CNPJ do cliente.
 PREFIXOS_COM_DOC = ("/api/cliente/", "/api/relatorio/", "/api/prestacao/",
@@ -68,7 +84,7 @@ async def exigir_sessao(request: Request, call_next):
     if usuario.get("papel") == "cliente":
         if caminho == "/":
             return RedirectResponse(f"/cliente.html?doc={usuario['doc_cliente']}", status_code=303)
-        if not any(caminho.startswith(p) for p in ROTAS_CLIENTE):
+        if not _cliente_pode(request.method, caminho):
             return JSONResponse({"erro": "fora do seu acesso"}, status_code=403)
         doc = _doc_do_caminho(caminho)
         if doc and not auth.pode_ver(usuario, doc):
