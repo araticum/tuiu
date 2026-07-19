@@ -156,3 +156,73 @@ na carteira.
 **Próximo:** carregar o estoque num lake CONSULTÁVEL, separado do banco
 operacional (o `tuiu-db` está na raiz de 44 GB com o veredas prod — o lake vai
 para `/mnt/dados-gov`).
+
+---
+
+## 9. Inteligência REGIME-AWARE — o dado velho mente se você não datar a regra
+
+Princípio de correção (dono, 19/07): **base legal muda a cada trimestre, e quando
+muda, certos "erros" passados ficam DEPRECADOS.** Uma prestação rejeitada em 2014
+por "faltou conciliação no modelo X" não ensina nada sobre 2026 se a PC 33/2023
+tornou aquele modelo informatizado. Pior: ensina a corrigir um problema que não
+existe mais.
+
+O histórico é útil, mas **cada desfecho carrega a regra que o produziu**. A
+camada de inteligência TEM que segmentar por regime:
+
+- **desfecho sob regra AINDA vigente** → preditivo (usa para prever/aconselhar);
+- **desfecho sob regra DEPRECADA** (PI 424/2016, redações revogadas) → contexto
+  (volume, tendência), **nunca prescrição**.
+
+As três peças que já construímos são exatamente o maquinário disto:
+1. `regras_normativas` versionada (cada redação com vigência) → mapeia a data do
+   instrumento para a regra em vigor naquele dia;
+2. o classificador de regime (`_regime`: PI424 / PC33 / PC28 por data+valor);
+3. a **vigília normativa** → quando detecta norma nova, marca quais base rates
+   ela toca como "fronteira de regime moveu — recomputar / rebaixar o antigo".
+
+**Isso é o moat.** Um concorrente que agrega 18 anos cru produz conselho
+confiante-e-errado ("esse erro é comum") sob uma regra que já morreu. Ganhamos
+por sermos datados: a resposta certa exige saber *sob qual lei* cada final
+aconteceu. Toda tabela de inteligência nasce com coluna de regime.
+
+---
+
+## 10. Além do Transfergov — a fundação de BI
+
+Regra do dono (19/07): **qualquer base marginalmente útil à nossa inteligência de
+negócio.** Baixar é barato e reversível; o valor está na análise. Priorizado para
+o negócio (operar transferência de OSC executora):
+
+### Tier 1 — universo de cliente e prospecção
+- **Mapa das OSC (IPEA)** — o registro definitivo das OSCs brasileiras (cadastro,
+  área de atuação, projetos, recursos recebidos). É literalmente o universo do
+  nosso cliente. API + bulk. → qualificar/prospectar, enriquecer ficha.
+- **Receita — Dados Abertos CNPJ** (~5 GB/mês) — cadastro nacional completo:
+  natureza jurídica, CNAE, QSA, Simples, situação, data de abertura. → enriquecer
+  QUALQUER cliente/prospect **offline**, achar todas as OSCs por natureza/CNAE,
+  rede de sócios — sem depender de BrasilAPI por-CNPJ.
+
+### Tier 1 — o pipeline do dinheiro
+- **Emendas parlamentares** (Portal Transparência bulk ✓ + Câmara/Senado API ✓ +
+  Siga Brasil/Tesouro) — quem emenda, RP6/7/8/9, execução. Emenda **financia** a
+  transferência → conhecer o pipeline = prever volume futuro e saber qual
+  parlamentar irriga qual OSC.
+
+### Tier 2 — risco e compliance
+- **CEPIM/CEIS/CNEP bulk** (Portal Transparência ✓) — já por API; o bulk dá join
+  offline + histórico.
+- **TCU** — inidôneos, contas julgadas irregulares, acórdãos (jurisprudência de
+  prestação de contas). → risco do prospect, precedente de defesa.
+- **CEBAS** — certificação beneficente (saúde/educação/assistência). Relevante
+  para os hospitais/santas casas da carteira.
+
+### Tier 3 — contexto
+- **IBGE** — municípios, população, PIB (limiares legais).
+- **CNES** — estabelecimentos de saúde (os hospitais da carteira).
+
+**Método:** adquirir cedo os baratos de alto valor (Mapa OSC, emendas, sanções
+bulk); a Receita (5 GB) é o único compromisso de tamanho — vale pela função de
+enriquecimento universal, mas estagia. Tudo mora em
+`/mnt/dados-gov/transferegov-lake/` e entra no mesmo lake DuckDB, com a coluna de
+regime onde couber.
