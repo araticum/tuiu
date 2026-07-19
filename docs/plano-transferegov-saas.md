@@ -166,8 +166,12 @@ Convênios** (captação por CNPJ, monitor CAUC/certidões, IA de plano de traba
 (unifica 5 sistemas, IA de proposta, obras com medição/fotos, alertas WhatsApp) — ambos pequenos, preço
 não público. **CNM/Plataforma Êxitos** é grátis p/ filiados mas cobre só a DESCOBERTA de oportunidades.
 Prosas atende o lado do órgão/OSC em editais. CRMs de mandato (Conecta Gabinete etc.) veem a emenda do
-lado do parlamentar. **Ninguém entrega**: motor de prazos com base legal citada, CAUC diário com diff,
-relatório de gestão de Pix guiado, documento final assinado ICP-Brasil, preço público.
+lado do parlamentar. **Ninguém entrega**: motor de prazos com base legal citada, relatório de gestão de Pix guiado,
+documento final assinado ICP-Brasil e — o que virou o diferencial mais forte — **o prazo que corre
+contra o CONCEDENTE** (art. 97): na carteira de 50, 953 das 1.004 prestações entregues estão paradas
+além do prazo do próprio órgão, a mais antiga há 4.878 dias. Todo mundo mostra o que o cliente deve;
+ninguém mostra o que devem a ele. *("preço público" saiu da lista em 19/07 — decisão do dono;
+"CAUC diário" saiu na correção de escopo de 18/07, é obrigação do ente.)*
 
 **Segmentos e ordem de ataque**: (1) prefeituras pequenas/médias e consórcios (723 ativos — 1 contrato →
 N municípios); (2) OSCs com parceria federal (MROSC); (3) assessorias/consultorias de captação
@@ -175,12 +179,20 @@ N municípios); (2) OSCs com parceria federal (MROSC); (3) assessorias/consultor
 depois). Sinergia interna: municípios monitorados geram licitações → radar comercial para o Veredas; o
 plano MPDFT (SaaS GRC como módulo Oasis) valida o padrão "módulo → SaaS".
 
-**Modelo comercial**: assinatura anual **abaixo do teto de dispensa por valor** (art. 75, II, 14.133 —
-≈R$ 65 mil em 2026; confirmar valor exato do decreto anual) = venda direta sem licitação. Preço-âncora
-proposto: município R$ 990–2.490/mês por faixa populacional (R$ 12–30 mil/ano — folga sob o teto);
-consórcio/assessoria por ente adicional decrescente; OSC R$ 390–690/mês. Pilotos design-partner: 90 dias
-grátis, 3 entes. Diferencial de confiança: preço público no site (ninguém no nicho tem) + LGPD by design
-(Pedro/DPO — ativo jurídico da casa).
+**Modelo comercial (DECIDIDO pelo dono em 19/07/2026 — reverte a proposta original)**: **sem preço na
+plataforma**. Nada de tabela, faixa ou parâmetro público; **cada contrato é individualizado**, negociado
+caso a caso fora do produto. Consequência assumida: some o diferencial de "preço público no site" que
+esta seção propunha, e a confiança passa a se sustentar no que o produto entrega —
+**base legal citada em cada prazo**, LGPD by design (gate do Quimera respondido, `PRIVACY.md` com ROPA) e
+o lado que ninguém mostra: **o que o governo deve ao cliente** (art. 97 — 953 das 1.004 prestações da
+carteira estão paradas além do prazo do próprio órgão).
+
+Não implementar: página de preço, faixas por porte, self-service de assinatura. A superfície comercial é
+proposta, não catálogo.
+
+*(proposta original, mantida como registro do que foi descartado: assinatura anual sob o teto de dispensa
+do art. 75, II da Lei 14.133 — município R$ 990–2.490/mês por faixa populacional, OSC R$ 390–690/mês,
+piloto de 90 dias.)*
 
 **Motor comercial interno** (decisão do dono 18/07, pós-benchmark do "Hub da PROJETUS"): a prospecção
 por dados vive FORA do produto, como ferramenta interna — `ferramentas/radar_comercial.py` cruza o dump
@@ -257,7 +269,7 @@ contrato.
 | **F2 — Regularidade do terceiro** | **CEPIM/CEIS/CNEP** via Portal da Transparência (API já ligada) + certidões próprias; semáforo, diff-alert, histórico. *CAUC fora de escopo (é do ente)* | entidade que entra no CEPIM gera alerta em ≤24h, com motivo e órgão |
 | **F3 — Cockpit & contas** | cockpit unificado; **checklist de prestação por regime** (base legal por item); **wizard do Relatório de Gestão Pix** (rascunho pronto p/ protocolar); **dossiê = pasta local** (sha256 + prazo de guarda). Sem Sargaço/pdf-render/A1 (decisão 18/07) | um instrumento real gerido ponta a ponta; rascunho do relatório entregue em markdown |
 | ~~F4 — IA~~ | **cortada (18/07)** — valor está no motor de regras determinístico, não em geração de texto paga | — |
-| **F5 — SaaS** | multi-tenant (tamanduá), onboarding, billing Ariranha, preço público, DPA/LGPD formal, stack `tuiu` PRÓPRIO no araticum **com instância Seriema própria** (liga a outbox da F1 ao WhatsApp real) | 2 tenants pagantes isolados em produção, com alertas chegando no celular |
+| **F5 — SaaS** | multi-tenant (tamanduá) ✅ e DPA/LGPD ✅ entregues 19/07; onboarding e billing Ariranha **sem preço público** (contrato individualizado — decisão de 19/07), stack `tuiu` PRÓPRIO no araticum **com instância Seriema própria** (liga a outbox da F1 ao WhatsApp real) | 2 tenants pagantes isolados em produção, com alertas chegando no celular |
 | **F6 — opcionais** | credenciamento compras/obras (ofício DTPAR) se cliente exigir; vigília normativa automatizada (DOU/comunicados); módulo obras (CIPI/medições); radar p/ mandatos | por demanda |
 
 Operação contínua desde F1: **vigília normativa** — as portarias conjuntas mudam a cada trimestre (4
@@ -277,13 +289,22 @@ novas conforme o ingest avança (CAUC/detru na F2), e só vira superfície de pr
 | Cobertura da g2 ainda parcial (execução financeira plena só em 2027) | CSV detru diário cobre o buraco (testado: estoque completo) |
 | CAUC sem API (scraping) | doc-extractor fail-safe + evidência (print/HTML) guardada; degradar sem quebrar |
 | CNM grátis na descoberta | competir na EXECUÇÃO/compliance, não na descoberta; radar é isca, não o produto |
-| ERPs incumbentes acordarem | velocidade + nicho + preço público + WhatsApp/A1 (integrações que eles não têm) |
+| ERPs incumbentes acordarem | velocidade + nicho + base legal citada + o lado do art. 97 (o que o órgão deve ao cliente) — não mais "preço público", descartado em 19/07 |
 | Dado é D-1 (carga ~09h), não real-time | `data_atualizacao` sempre visível; comunicação honesta |
 | Dados bancários de executores na API pública | minimizar/mascarar; gate PRIVACY.md |
 | Equipe = 1 dev | fases enxutas, reuso máximo (§7), cada fase vendável sozinha |
 | MultiEntes muda o jogo até 2028 | é oportunidade (mais entes na plataforma); acompanhar pilotos RN/AC/BA/RR |
 
 ## 10. Decisões
+
+**Travadas (dono, 19/07/2026):**
+- **Preço: NÃO vai para a plataforma.** Tudo individualizado, sem parâmetros definidos. Sem tabela, sem
+  faixa, sem self-service.
+- **Domínio: `tuiu.araticum.net`** — subdomínio do domínio da casa, nada a registrar. (Levantamento
+  descartado: `tuiu.com.br` está registrado e venceu em 16/07/2026; `tuiu.app.br` e `tuiu.net.br` estão
+  livres; `tuiuiu.com.br` é da Tuiuiú Comunicação até 2029.)
+- O console segue **em loopback** no araticum; publicar em `tuiu.araticum.net` é um passo separado e
+  depende de ordem expressa do dono.
 
 **Travadas (dono, 17/07/2026):**
 - Codinome: **Tuiú**.
