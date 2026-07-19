@@ -54,6 +54,40 @@ TUIU_DSN="postgresql://postgres@127.0.0.1:25432/tuiu" \\
   ./.venv/bin/python -c "import sys; sys.path.insert(0,'backend'); from app.db import migrar; print('  migrations:', migrar() or 'nenhuma nova')"
 REMOTO
 
+echo "==> instalando o console (systemd --user, uvicorn em loopback)"
+ssh "$HOST" "bash -s" <<'REMOTO'
+set -euo pipefail
+mkdir -p ~/.config/systemd/user
+./.venv/bin/pip -q install fastapi uvicorn 2>/dev/null || \
+  (cd /home/pedro/tuiu && ./.venv/bin/pip -q install fastapi uvicorn)
+
+cat > ~/.config/systemd/user/tuiu-console.service <<'UNIT'
+[Unit]
+Description=Tuiu - console de operacao (API + telas)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/pedro/tuiu
+Environment=TUIU_DSN=postgresql://postgres@127.0.0.1:25432/tuiu
+Environment=PYTHONUTF8=1
+# 127.0.0.1 de proposito: o console mostra dado de 50 organizacoes reais.
+# Publicar para fora (cloudflared) e decisao do dono, nao efeito colateral de deploy.
+ExecStart=/home/pedro/tuiu/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8600
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+
+systemctl --user daemon-reload
+systemctl --user enable --now tuiu-console.service
+sleep 2
+systemctl --user is-active tuiu-console.service | sed 's/^/  console: /'
+curl -s -o /dev/null -w "  /login.html -> %{http_code}\n" http://127.0.0.1:8600/login.html
+curl -s -o /dev/null -w "  /api/cockpit sem sessao -> %{http_code} (tem que ser 401)\n" http://127.0.0.1:8600/api/cockpit
+REMOTO
+
 echo "==> instalando a cadeia diária (systemd --user, 09h30)"
 ssh "$HOST" "bash -s" <<'REMOTO'
 set -euo pipefail
