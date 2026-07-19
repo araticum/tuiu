@@ -71,13 +71,19 @@ def _freado(con, login: str, ip: str | None) -> bool:
     return n >= TENTATIVAS_MAX
 
 
-def criar_usuario(login: str, nome: str, senha: str, trocar_senha: bool = False) -> None:
+def criar_usuario(login: str, nome: str, senha: str, trocar_senha: bool = False,
+                  papel: str = "operador", doc_cliente: str | None = None) -> None:
+    if papel == "cliente" and not doc_cliente:
+        raise ValueError("papel `cliente` sem doc_cliente veria a carteira toda")
     with conectar() as con:
         con.execute(
-            "INSERT INTO usuarios (login, nome, senha_hash, trocar_senha) VALUES (%s,%s,%s,%s)"
+            "INSERT INTO usuarios (login, nome, senha_hash, trocar_senha, papel, doc_cliente)"
+            " VALUES (%s,%s,%s,%s,%s,%s)"
             " ON CONFLICT (login) DO UPDATE SET nome=EXCLUDED.nome,"
-            " senha_hash=EXCLUDED.senha_hash, trocar_senha=EXCLUDED.trocar_senha, ativo=true",
-            (login.strip().lower(), nome, hash_senha(senha), trocar_senha))
+            " senha_hash=EXCLUDED.senha_hash, trocar_senha=EXCLUDED.trocar_senha,"
+            " papel=EXCLUDED.papel, doc_cliente=EXCLUDED.doc_cliente, ativo=true",
+            (login.strip().lower(), nome, hash_senha(senha), trocar_senha,
+             papel, doc_cliente))
         con.commit()
 
 
@@ -135,14 +141,38 @@ def sessao_valida(token: str | None) -> dict | None:
     try:
         with conectar() as con:
             r = con.execute(
-                "SELECT s.login, u.nome, u.trocar_senha FROM sessoes s"
+                "SELECT s.login, u.nome, u.trocar_senha, u.papel, u.doc_cliente FROM sessoes s"
                 " JOIN usuarios u ON u.login = s.login"
                 " WHERE s.token=%s AND s.expira_em > now() AND u.ativo", (token,)).fetchone()
     except Exception:  # noqa: BLE001 — banco fora do ar NÃO libera o console
         return None
     if not r:
         return None
-    return {"login": r[0], "nome": r[1], "trocar_senha": r[2]}
+    return {"login": r[0], "nome": r[1], "trocar_senha": r[2],
+            "papel": r[3], "doc_cliente": r[4]}
+
+
+def escopo(usuario: dict | None) -> set[str] | None:
+    """CNPJs que este usuário pode ver. `None` = a carteira toda (operador).
+
+    Papel desconhecido cai em conjunto VAZIO — não vê nada. É o D3 do gate
+    (deny by default): papel novo nasce sem alcance, e ampliar é ato explícito,
+    não consequência de esquecer um `elif`.
+    """
+    if not usuario:
+        return set()
+    if usuario.get("papel") == "operador":
+        return None
+    if usuario.get("papel") == "cliente" and usuario.get("doc_cliente"):
+        return {usuario["doc_cliente"]}
+    return set()
+
+
+def pode_ver(usuario: dict | None, doc: str) -> bool:
+    alcance = escopo(usuario)
+    if alcance is None:
+        return True
+    return "".join(c for c in (doc or "") if c.isdigit()) in alcance
 
 
 def encerrar(token: str | None) -> None:

@@ -109,11 +109,36 @@ def _brl(v) -> str:
     return f"R$ {float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+# Campos com NOME DE PESSOA FÍSICA em claro na resposta da g2. O extrato
+# bancário identifica quem recebeu cada pagamento da OSC — prestador, empregado,
+# bolsista. A fonte mascara o CPF ("***54415***") e deixa o nome aberto.
+#
+# Não temos finalidade para esses nomes: do extrato usamos contagem de
+# lançamentos e saldo. Guardar "porque pode servir" é exatamente o que o D1 do
+# gate proíbe, então mascaramos na ENTRADA — o dado não chega ao disco.
+# Se algum dia houver finalidade escrita, desmascarar é decisão consciente.
+CAMPOS_NOME_PF = ("tx_nome_beneficiario", "tx_nome_depositante_extrato_bancario",
+                  "nm_favorecido", "tx_nome_favorecido")
+
+
+def _mascara_nome(valor) -> str | None:
+    """"MIRLA RAKEL GONCALVES DA SILVA" -> "M. R. G. D. S." — some para conferir
+    um lançamento, não para reidentificar a pessoa."""
+    if not valor or str(valor).strip().lower() in ("none", "null", ""):
+        return valor
+    partes = [p for p in str(valor).split() if p]
+    return " ".join(f"{p[0].upper()}." for p in partes) or None
+
+
+def _sem_nome_pf(linha: dict) -> dict:
+    return {k: (_mascara_nome(v) if k in CAMPOS_NOME_PF else v) for k, v in linha.items()}
+
+
 def _grava(dir_: Path, nome: str, linhas: list[dict]):
     dir_.mkdir(parents=True, exist_ok=True)
     with gzip.open(dir_ / f"{nome}.jsonl.gz", "wt", encoding="utf-8") as fh:
         for l in linhas:
-            fh.write(json.dumps(l, ensure_ascii=False) + "\n")
+            fh.write(json.dumps(_sem_nome_pf(l), ensure_ascii=False) + "\n")
 
 
 def recortar(cnpj: str, destino: Path, workers: int) -> dict:

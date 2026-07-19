@@ -58,6 +58,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--criar", metavar="LOGIN")
     ap.add_argument("--nome", default=None)
+    ap.add_argument("--papel", choices=("operador", "cliente"), default="operador")
+    ap.add_argument("--cliente", metavar="CNPJ",
+                    help="obrigatorio com --papel cliente: o unico CNPJ que a conta enxerga")
     ap.add_argument("--resetar", metavar="LOGIN")
     ap.add_argument("--desativar", metavar="LOGIN")
     ap.add_argument("--listar", action="store_true")
@@ -68,7 +71,11 @@ def main():
     if args.criar or args.resetar:
         login = (args.criar or args.resetar).strip().lower()
         senha = _sortear()
-        criar_usuario(login, args.nome or login, senha, trocar_senha=True)
+        doc = "".join(c for c in (args.cliente or "") if c.isdigit()) or None
+        if args.papel == "cliente" and not doc:
+            sys.exit("--papel cliente exige --cliente <CNPJ>: conta sem alcance nao pode existir")
+        criar_usuario(login, args.nome or login, senha, trocar_senha=True,
+                      papel=args.papel, doc_cliente=doc)
         alvo = _guardar(login, senha)
         print(f"conta '{login}' pronta (precisa trocar a senha no 1o acesso)")
         print(f"senha inicial gravada em: {alvo}")

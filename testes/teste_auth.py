@@ -141,3 +141,61 @@ def test_senha_nova_curta_e_recusada():
     auth.criar_usuario(LOGIN, "Teste", SENHA)
     ok, msg = auth.trocar_senha(LOGIN, SENHA, "curta")
     assert not ok and "12" in msg
+
+
+# ---------------------------------------------- isolamento entre tenants (D3)
+
+CLI_A, CLI_B = "11111111111111", "22222222222222"
+
+
+def _conta_cliente(login: str, doc: str):
+    auth.criar_usuario(login, "Cliente", SENHA, papel="cliente", doc_cliente=doc)
+    return auth.sessao_valida(auth.autenticar(login, SENHA, ip="9.9.9.9")[0])
+
+
+def test_cliente_so_enxerga_o_proprio_cnpj():
+    u = _conta_cliente("pytest_cli_a", CLI_A)
+    assert auth.escopo(u) == {CLI_A}
+    assert auth.pode_ver(u, CLI_A)
+    assert not auth.pode_ver(u, CLI_B), "vazamento entre clientes é o incidente de LGPD"
+
+
+def test_cliente_enxerga_com_cnpj_formatado():
+    """O doc chega da URL às vezes com pontuação; comparar cru abriria brecha."""
+    u = _conta_cliente("pytest_cli_a", CLI_A)
+    assert auth.pode_ver(u, "11.111.111/1111-11")
+
+
+def test_operador_enxerga_a_carteira_toda():
+    auth.criar_usuario("pytest_op", "Operador", SENHA)
+    u = auth.sessao_valida(auth.autenticar("pytest_op", SENHA, ip="9.9.9.9")[0])
+    assert auth.escopo(u) is None
+    assert auth.pode_ver(u, CLI_A) and auth.pode_ver(u, CLI_B)
+
+
+@pytest.mark.parametrize("usuario", [
+    None, {}, {"papel": "cliente"},              # cliente sem doc = sem alcance
+    {"papel": "cliente", "doc_cliente": None},
+    {"papel": "auditor"},                        # papel que ninguém previu
+    {"papel": ""},
+])
+def test_papel_estranho_nao_ve_nada(usuario):
+    """D3: papel novo nasce sem alcance. Um `elif` esquecido não pode virar
+    'vê tudo'."""
+    assert auth.escopo(usuario) == set()
+    assert not auth.pode_ver(usuario, CLI_A)
+
+
+def test_banco_recusa_cliente_sem_alcance():
+    """A trava está no schema também: papel cliente sem doc não pode existir."""
+    import psycopg
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with conectar() as con:
+            con.execute("INSERT INTO usuarios (login, nome, senha_hash, papel, doc_cliente)"
+                        " VALUES ('pytest_ruim','X','x','cliente',NULL)")
+            con.commit()
+
+
+def test_criar_cliente_sem_doc_e_recusado_no_codigo():
+    with pytest.raises(ValueError):
+        auth.criar_usuario("pytest_ruim2", "X", SENHA, papel="cliente")

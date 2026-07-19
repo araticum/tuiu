@@ -28,6 +28,24 @@ app = FastAPI(title="Tuiú", version="0.3.0-console")
 # fechado, então esquecer de proteger uma rota nova não abre buraco.
 PUBLICO = {"/login.html", "/api/login", "/api/sessao"}
 
+# Rotas que um usuário de papel `cliente` alcança. Curta de propósito: rota nova
+# nasce FECHADA para cliente (D3 do gate de privacidade). O cockpit e a fila
+# ficam de fora porque mostram a carteira inteira.
+ROTAS_CLIENTE = ("/api/logout", "/api/senha", "/api/sessao",
+                 "/api/cliente/", "/api/relatorio/", "/api/prestacao/",
+                 "/cliente.html", "/login.html")
+
+# Rotas cujo primeiro segmento após o prefixo é o CNPJ do cliente.
+PREFIXOS_COM_DOC = ("/api/cliente/", "/api/relatorio/", "/api/prestacao/",
+                    "/api/relatorio-gestao-pix/", "/api/dossie/", "/api/entes/")
+
+
+def _doc_do_caminho(caminho: str) -> str | None:
+    for p in PREFIXOS_COM_DOC:
+        if caminho.startswith(p):
+            return caminho[len(p):].split("/")[0] or None
+    return None
+
 
 def _ip(request: Request) -> str | None:
     # atrás de proxy/túnel o IP real vem no cabeçalho; sem ele, o do socket
@@ -46,6 +64,17 @@ async def exigir_sessao(request: Request, call_next):
         if caminho.startswith("/api/"):
             return JSONResponse({"erro": "nao autenticado"}, status_code=401)
         return RedirectResponse("/login.html", status_code=303)
+
+    if usuario.get("papel") == "cliente":
+        if caminho == "/":
+            return RedirectResponse(f"/cliente.html?doc={usuario['doc_cliente']}", status_code=303)
+        if not any(caminho.startswith(p) for p in ROTAS_CLIENTE):
+            return JSONResponse({"erro": "fora do seu acesso"}, status_code=403)
+        doc = _doc_do_caminho(caminho)
+        if doc and not auth.pode_ver(usuario, doc):
+            # 403 e não 404: o CNPJ existe ou não, não é assunto de quem perguntou
+            return JSONResponse({"erro": "fora do seu acesso"}, status_code=403)
+
     request.state.usuario = usuario
     return await call_next(request)
 
