@@ -237,8 +237,105 @@ def test_permissao_do_cliente_considera_o_metodo(metodo, caminho, pode):
     assert _cliente_pode(metodo, caminho) is pode
 
 
+# Escritas que o papel `cliente` pode ter: só as da PRÓPRIA conta. Nenhuma
+# toca dado de operação (diário, fila, dirigente, interruptor).
+ESCRITA_PROPRIA = ("/api/logout", "/api/senha", "/api/perfil/login")
+
+
 def test_permissao_de_cliente_nao_tem_escrita_em_dado_de_operacao():
-    """Invariante: fora de logout/senha, o papel cliente é SÓ LEITURA."""
+    """Invariante: o papel cliente escreve só na própria conta. Se alguém
+    adicionar escrita em qualquer outra coisa, este teste quebra."""
     escritas = [(m, p) for m, p in PERMISSOES_CLIENTE
-                if m != "GET" and p not in ("/api/logout", "/api/senha")]
+                if m != "GET" and p not in ESCRITA_PROPRIA]
     assert not escritas, f"papel cliente ganhou escrita em {escritas}"
+
+
+# ------------------------------------------------- contas: criar e trocar login
+
+def test_operador_cria_operador_com_senha_sorteada():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, msg, senha = auth.criar_operador("pytest_chefe", SENHA, "pytest_novo", "Novo")
+    assert ok, msg
+    assert senha and len(senha) >= 15, "a senha é sorteada, não escolhida por quem cria"
+    novo = auth.sessao_valida(auth.autenticar("pytest_novo", senha, ip="1.1.1.1")[0])
+    assert novo["papel"] == "operador"
+    assert novo["trocar_senha"] is True, "conta nova nasce obrigada a trocar"
+
+
+def test_criar_operador_exige_a_senha_de_quem_cria():
+    """Criar conta amplia acesso: uma sessão sequestrada não pode fazer sozinha."""
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, _, _ = auth.criar_operador("pytest_chefe", "senha errada", "pytest_novo", "Novo")
+    assert not ok
+
+
+@pytest.mark.parametrize("login", ["ab", "com espaço", "", "x" * 40, "-comeca-com-traco",
+                                   "acento_çã", "ponto..duplo" * 4])
+def test_login_invalido_recusado(login):
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, _, _ = auth.criar_operador("pytest_chefe", SENHA, login, "Novo")
+    assert not ok
+
+
+def test_login_maiusculo_e_normalizado_nao_recusado():
+    """Login não é sensível a caixa: "Fulano" vira "fulano". Assim "FULANO"
+    depois colide como repetido, em vez de criar uma segunda conta."""
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, msg, senha = auth.criar_operador("pytest_chefe", SENHA, "PyTest_Novo", "Novo")
+    assert ok, msg
+    assert auth.autenticar("pytest_novo", senha, ip="1.1.1.1")[0], "entra pelo login minúsculo"
+    ok2, _, _ = auth.criar_operador("pytest_chefe", SENHA, "PYTEST_NOVO", "Outro")
+    assert not ok2, "a segunda tentativa colide, não cria conta paralela"
+
+
+def test_trocar_o_proprio_login_mantem_a_sessao():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    token, _ = auth.autenticar("pytest_chefe", SENHA, ip="1.1.1.1")
+    ok, msg = auth.trocar_login("pytest_chefe", "pytest_outro", SENHA)
+    assert ok and msg == "pytest_outro"
+    u = auth.sessao_valida(token)
+    assert u and u["login"] == "pytest_outro", "o FK cascateia: a sessão acompanha o novo login"
+
+
+def test_trocar_login_exige_senha_e_recusa_repetido():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    auth.criar_usuario("pytest_outro", "Outro", SENHA)
+    assert not auth.trocar_login("pytest_chefe", "pytest_livre", "errada")[0]
+    assert not auth.trocar_login("pytest_chefe", "pytest_outro", SENHA)[0], "login já existe"
+    assert not auth.trocar_login("pytest_chefe", "pytest_chefe", SENHA)[0], "igual ao atual"
+
+
+def test_historico_de_acesso_guarda_o_nome_da_epoca():
+    """`acessos_log` NÃO é reescrito na troca: ele registra quem entrou com qual
+    identidade, e renomear apagaria a trilha."""
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    auth.autenticar("pytest_chefe", SENHA, ip="1.1.1.1")
+    auth.trocar_login("pytest_chefe", "pytest_outro", SENHA)
+    with conectar() as con:
+        antigos = con.execute(
+            "SELECT count(*) FROM acessos_log WHERE login='pytest_chefe'").fetchone()[0]
+        troca = con.execute(
+            "SELECT count(*) FROM acessos_log WHERE login='pytest_outro'"
+            " AND motivo LIKE 'login alterado%%'").fetchone()[0]
+    assert antigos >= 1, "o histórico antigo continua com o nome de então"
+    assert troca == 1, "a troca entra no log ligando os dois nomes"
+
+
+def test_ultimo_operador_ativo_nao_pode_ser_desativado():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    auth.criar_usuario("pytest_novo", "Novo", SENHA)
+    with conectar() as con:   # deixa só os dois de teste ativos nesta checagem
+        outros = con.execute(
+            "SELECT count(*) FROM usuarios WHERE ativo AND papel='operador'"
+            " AND login NOT LIKE 'pytest_%%'").fetchone()[0]
+    ok, msg = auth.desativar("pytest_chefe", "pytest_novo", SENHA)
+    assert ok, msg
+    if outros == 0:
+        ok2, msg2 = auth.desativar("pytest_novo", "pytest_chefe", SENHA)
+        assert not ok2 and "último operador" in msg2
+
+
+def test_nao_desativa_a_propria_conta():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, msg = auth.desativar("pytest_chefe", "pytest_chefe", SENHA)
+    assert not ok and "própria" in msg

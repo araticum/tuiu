@@ -39,7 +39,8 @@ PUBLICO = {"/login.html", "/api/login", "/api/sessao"}
 PERMISSOES_CLIENTE = (
     ("GET", "/api/sessao"),
     ("POST", "/api/logout"),
-    ("POST", "/api/senha"),        # trocar a própria senha
+    ("POST", "/api/senha"),         # trocar a própria senha
+    ("POST", "/api/perfil/login"),  # trocar o próprio login
     ("GET", "/api/cliente/"),      # só leitura da própria ficha
     ("GET", "/api/relatorio/"),
     ("GET", "/api/prestacao/"),
@@ -387,6 +388,50 @@ def norma_tratar(norma_id: int, corpo: dict, request: Request):
     if not achou:
         raise HTTPException(404, "norma nao encontrada")
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ contas
+# Só operador chega aqui: o papel `cliente` não tem estes caminhos em
+# PERMISSOES_CLIENTE, e o padrão do middleware é negar.
+
+@app.get("/api/usuarios")
+def usuarios_listar():
+    return {"usuarios": auth.listar_usuarios()}
+
+
+@app.post("/api/usuarios")
+def usuarios_criar(corpo: dict, request: Request):
+    u = request.state.usuario
+    if u.get("papel") != "operador":
+        raise HTTPException(403, "fora do seu acesso")
+    ok, msg, senha = auth.criar_operador(
+        u["login"], corpo.get("minha_senha", ""),
+        corpo.get("login", ""), corpo.get("nome", ""))
+    if not ok:
+        raise HTTPException(400, msg)
+    # a senha aparece UMA vez, para ser repassada; a conta nasce obrigada a trocar
+    return {"ok": True, "mensagem": msg, "senha_inicial": senha}
+
+
+@app.post("/api/usuarios/{alvo}/desativar")
+def usuarios_desativar(alvo: str, corpo: dict, request: Request):
+    u = request.state.usuario
+    if u.get("papel") != "operador":
+        raise HTTPException(403, "fora do seu acesso")
+    ok, msg = auth.desativar(u["login"], alvo, corpo.get("minha_senha", ""))
+    if not ok:
+        raise HTTPException(400, msg)
+    return {"ok": True, "mensagem": msg}
+
+
+@app.post("/api/perfil/login")
+def perfil_login(corpo: dict, request: Request, response: Response):
+    """Troca o próprio login. A sessão sobrevive (o FK cascateia)."""
+    u = request.state.usuario
+    ok, msg = auth.trocar_login(u["login"], corpo.get("novo", ""), corpo.get("senha", ""))
+    if not ok:
+        raise HTTPException(400, msg)
+    return {"ok": True, "login": msg}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))

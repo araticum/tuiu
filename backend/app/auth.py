@@ -23,6 +23,7 @@ import base64
 import hashlib
 import hmac
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -201,3 +202,99 @@ def ha_usuario() -> bool:
             return con.execute("SELECT count(*) FROM usuarios WHERE ativo").fetchone()[0] > 0
     except Exception:  # noqa: BLE001
         return False
+
+
+LOGIN_VALIDO = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
+
+
+def _valida_login(login: str) -> tuple[bool, str]:
+    login = (login or "").strip().lower()
+    if not LOGIN_VALIDO.match(login):
+        return False, "login: 3 a 32 caracteres, minúsculo, começando por letra ou número"
+    return True, login
+
+
+def trocar_login(login_atual: str, novo: str, senha: str) -> tuple[bool, str]:
+    """Troca o próprio login. Exige a senha: mudar identidade com uma sessão
+    aberta é justamente o que um cookie roubado tentaria fazer."""
+    ok, novo = _valida_login(novo)
+    if not ok:
+        return False, novo
+    if novo == login_atual:
+        return False, "o login novo é igual ao atual"
+    with conectar() as con:
+        r = con.execute("SELECT senha_hash FROM usuarios WHERE login=%s AND ativo",
+                        (login_atual,)).fetchone()
+        if not r or not confere_senha(senha, r[0]):
+            return False, "senha não confere"
+        if con.execute("SELECT 1 FROM usuarios WHERE login=%s", (novo,)).fetchone():
+            return False, "esse login já existe"
+        # sessoes cascateia (migration 0013); acessos_log fica com o nome da
+        # época — é trilha, não cadastro
+        con.execute("UPDATE usuarios SET login=%s WHERE login=%s", (novo, login_atual))
+        _registrar(con, novo, True, f"login alterado de {login_atual}", None)
+        con.commit()
+    return True, novo
+
+
+def criar_operador(criador: str, senha_do_criador: str, login: str,
+                   nome: str) -> tuple[bool, str, str | None]:
+    """Um operador cria outro. Devolve (ok, mensagem, senha_inicial).
+
+    A senha é SORTEADA, nunca escolhida por quem cria — assim o criador não sai
+    conhecendo a credencial de outra pessoa. Ela aparece uma única vez para ser
+    repassada, e a conta nasce obrigada a trocar.
+
+    Exige a senha de quem cria: criar operador é ampliar acesso, e uma sessão
+    sequestrada não pode fazer isso sozinha.
+    """
+    ok, login = _valida_login(login)
+    if not ok:
+        return False, login, None
+    nome = (nome or "").strip()
+    if len(nome) < 2:
+        return False, "informe o nome de quem vai usar a conta", None
+    with conectar() as con:
+        r = con.execute("SELECT senha_hash FROM usuarios WHERE login=%s AND ativo AND papel='operador'",
+                        (criador,)).fetchone()
+        if not r or not confere_senha(senha_do_criador, r[0]):
+            return False, "sua senha não confere", None
+        if con.execute("SELECT 1 FROM usuarios WHERE login=%s", (login,)).fetchone():
+            return False, "esse login já existe", None
+    senha = secrets.token_urlsafe(15)
+    criar_usuario(login, nome, senha, trocar_senha=True, papel="operador")
+    with conectar() as con:
+        _registrar(con, criador, True, f"criou o operador {login}", None)
+        con.commit()
+    return True, f"operador '{login}' criado", senha
+
+
+def listar_usuarios() -> list[dict]:
+    with conectar() as con:
+        linhas = con.execute(
+            "SELECT login, nome, papel, doc_cliente, ativo, trocar_senha, ultimo_acesso"
+            " FROM usuarios ORDER BY papel, login").fetchall()
+    return [{"login": l, "nome": n, "papel": p, "doc_cliente": d, "ativo": a,
+             "trocar_senha": t, "ultimo_acesso": u.isoformat() if u else None}
+            for l, n, p, d, a, t, u in linhas]
+
+
+def desativar(quem: str, alvo: str, senha_de_quem: str) -> tuple[bool, str]:
+    if quem == alvo:
+        return False, "não dá para desativar a própria conta"
+    with conectar() as con:
+        r = con.execute("SELECT senha_hash FROM usuarios WHERE login=%s AND ativo AND papel='operador'",
+                        (quem,)).fetchone()
+        if not r or not confere_senha(senha_de_quem, r[0]):
+            return False, "sua senha não confere"
+        # não deixar a casa sem ninguém: o último operador ativo não sai
+        restantes = con.execute(
+            "SELECT count(*) FROM usuarios WHERE ativo AND papel='operador' AND login <> %s",
+            (alvo,)).fetchone()[0]
+        if restantes == 0:
+            return False, "esse é o último operador ativo — criar outro antes"
+        n = con.execute("UPDATE usuarios SET ativo=false WHERE login=%s", (alvo,)).rowcount
+        con.execute("DELETE FROM sessoes WHERE login=%s", (alvo,))   # tirar acesso vale AGORA
+        _registrar(con, quem, True, f"desativou {alvo}", None)
+        con.commit()
+    return (True, f"{alvo} desativado") if n else (False, "conta não encontrada")
