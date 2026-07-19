@@ -22,12 +22,13 @@ from __future__ import annotations
 import csv
 import json
 import sys
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.carteira import ROTULOS, snapshot_mais_recente  # noqa: E402
+from app.carteira import ROTULOS, docs_ativos, snapshot_mais_recente  # noqa: E402
 from app.db import conectar, migrar, regra_vigente  # noqa: E402
 
 CORTE_REGIME_NOVO = date(2023, 9, 1)  # Decreto 11.531 + PC 33 em vigor
@@ -70,12 +71,20 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
                     limite_pc = fim_vig + timedelta(days=int(regra["valor"]["dias"]))
                     base_pc = regra["base_legal"]
             if limite_pc:
+                situacao = (row.get("SIT_CONVENIO") or "").strip()
+                com_o_cliente = _bola_com_o_convenente(situacao)
                 marcos.append({
                     "cnpj": cnpj, "ente": ente, "fonte": "legado", "instrumento": nr,
-                    "tipo": "prestacao_contas", "data_limite": limite_pc,
-                    "descricao": f"Prestação de contas do {nr} ({row.get('SIT_CONVENIO')})",
-                    "base_legal": base_pc, "farol": _farol(limite_pc, hoje),
-                    "detalhes": {"regime": regime, "fim_vigencia": row.get("DIA_FIM_VIGENC_CONV")},
+                    "tipo": "prestacao_contas" if com_o_cliente else "prestacao_em_analise",
+                    "data_limite": limite_pc,
+                    "descricao": (f"Prestação de contas do {nr} ({situacao})" if com_o_cliente else
+                                  f"Prestação do {nr} já entregue — {situacao.lower()}"),
+                    "base_legal": base_pc,
+                    # prazo vencido só acusa quem PODE agir; com a prestação
+                    # entregue, o atraso é da análise, não do convenente
+                    "farol": _farol(limite_pc, hoje) if com_o_cliente else "ok",
+                    "detalhes": {"regime": regime, "fim_vigencia": row.get("DIA_FIM_VIGENC_CONV"),
+                                 "situacao": situacao, "bola_com": "convenente" if com_o_cliente else "concedente"},
                 })
             if fim_vig and fim_vig >= hoje:
                 marcos.append({
@@ -244,6 +253,37 @@ def _marco_defeso(con, cnpj: str, ente: str, hoje: date) -> list[dict]:
     }]
 
 
+def _sem_acento(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s or "")
+                   if unicodedata.category(c) != "Mn").lower().strip()
+
+
+# Estágios em que a prestação JÁ FOI ENTREGUE e a bola está com o concedente.
+_EM_ANALISE = ("para analise", "em analise", "aprovada", "comprovada", "arquivada")
+
+
+def _bola_com_o_convenente(situacao: str | None) -> bool:
+    """True quando o CLIENTE ainda tem o que fazer na prestação de contas.
+
+    Sem esta distinção o motor acusa atraso de quem cumpriu: na carteira de 50,
+    **1.004 dos 1.301 "vencidos" eram prestações já entregues** aguardando
+    análise do governo. Alarme falso em 77% dos casos destrói a confiança no
+    produto inteiro — pior do que não avisar.
+
+    O casamento é deliberadamente estreito: só situação DE PRESTAÇÃO conta como
+    entregue. "Proposta/Plano de Trabalho Aprovado" contém "aprovado", mas é o
+    plano que foi aprovado, não a prestação — ali o prazo vencido é real.
+    """
+    s = _sem_acento(situacao)
+    if not s:
+        return True   # sem situação declarada, cobrar é o lado seguro
+    if "prestacao de contas" not in s:
+        return True   # ainda não chegou na fase de prestação
+    if "complementacao" in s:
+        return True   # devolvida para complementar: a bola volta pro cliente
+    return not any(t in s for t in _EM_ANALISE)
+
+
 def gerar_marcos(hoje: date | None = None) -> dict:
     hoje = hoje or date.today()
     snap = snapshot_mais_recente()
@@ -254,7 +294,7 @@ def gerar_marcos(hoje: date | None = None) -> dict:
         # Recorte no disco NÃO é carteira: quem sai de `clientes` (desativado,
         # trocado) deixa o diretório para trás e continuaria gerando marco e
         # alerta para sempre — fila do operador cheia de quem não é cliente.
-        ativos = {d for (d,) in con.execute("SELECT doc FROM clientes WHERE ativo")}
+        ativos = docs_ativos()
         ignorados = 0
         for sub in sorted(snap.iterdir()):
             cj = sub / "carteira.json"
@@ -271,26 +311,42 @@ def gerar_marcos(hoje: date | None = None) -> dict:
             todos += _marcos_especiais(con, cnpj, ente, carteira, hoje)
             todos += _marco_defeso(con, cnpj, ente, hoje)
 
+        # marcador da rodada: tudo que não for tocado depois disto é lixo.
+        # clock_timestamp() avança dentro da transação; now() não.
+        inicio = con.execute("SELECT clock_timestamp()").fetchone()[0]
+
         for m in todos:
             con.execute(
                 """INSERT INTO marcos (cnpj, ente, fonte, instrumento, tipo, data_limite,
-                                       descricao, base_legal, farol, detalhes, snapshot)
+                                       descricao, base_legal, farol, detalhes, snapshot, atualizado_em)
                    VALUES (%(cnpj)s, %(ente)s, %(fonte)s, %(instrumento)s, %(tipo)s, %(data_limite)s,
-                           %(descricao)s, %(base_legal)s, %(farol)s, %(detalhes)s, %(snapshot)s)
+                           %(descricao)s, %(base_legal)s, %(farol)s, %(detalhes)s, %(snapshot)s,
+                           clock_timestamp())
                    ON CONFLICT (cnpj, fonte, tipo, COALESCE(instrumento,''),
                                 COALESCE(data_limite,'0001-01-01'::date))
                    DO UPDATE SET descricao=EXCLUDED.descricao, base_legal=EXCLUDED.base_legal,
                                  farol=EXCLUDED.farol, detalhes=EXCLUDED.detalhes,
-                                 snapshot=EXCLUDED.snapshot, atualizado_em=now()""",
+                                 snapshot=EXCLUDED.snapshot, atualizado_em=clock_timestamp()""",
                 {**m, "detalhes": json.dumps(m.get("detalhes") or {}, ensure_ascii=False),
                  "snapshot": snap.name},
             )
-        # marcos de quem saiu da carteira também têm que sair da base, senão
-        # sobrevivem ao desligamento e seguem alimentando alerta e fila
-        removidos = 0
-        if ativos:
-            removidos = con.execute(
-                "DELETE FROM marcos WHERE NOT (cnpj = ANY(%s))", (list(ativos),)).rowcount
+        # A base espelha ESTA rodada. Duas fontes de lixo, ambas reais:
+        #  - cliente que saiu da carteira, senão seus marcos sobrevivem ao
+        #    desligamento e seguem alimentando alerta e fila;
+        #  - marco não regerado agora (instrumento sumiu do recorte, ou mudou de
+        #    tipo — foi o caso da prestação entregue, que deixou de ser
+        #    `prestacao_contas` e virou `prestacao_em_analise`: o upsert não casa
+        #    tipo diferente, então a linha "vencida" antiga conviveria com a nova).
+        #
+        # O corte é por `atualizado_em`, NÃO por `snapshot`: snapshot é a data do
+        # recorte, e duas rodadas no mesmo dia compartilham o valor — foi assim
+        # que 1.027 duplicatas sobreviveram à primeira tentativa de limpeza.
+        # `clock_timestamp()` (e não `now()`) porque now() é o início da
+        # transação e seria igual ao marcador, não maior.
+        removidos = con.execute(
+            "DELETE FROM marcos WHERE atualizado_em < %s"
+            + (" OR NOT (cnpj = ANY(%s))" if ativos else ""),
+            (inicio, list(ativos)) if ativos else (inicio,)).rowcount
         con.commit()
         n = con.execute("SELECT count(*) FROM marcos").fetchone()[0]
     return {"snapshot": snap.name, "gerados_ou_atualizados": len(todos),

@@ -42,6 +42,26 @@ def snapshot_mais_recente() -> Path | None:
     return None
 
 
+def docs_ativos() -> set[str]:
+    """CNPJs da carteira ATIVA.
+
+    Recorte no disco NÃO é carteira: o diretório de um cliente desligado
+    sobrevive à troca, e sem este filtro cada elo segue gastando trabalho com
+    quem não é mais cliente — inclusive cota de API pública limitada (a CGU) e
+    marcos/alertas que enchem a fila do operador.
+
+    Conjunto vazio significa "não sei filtrar" (sem banco ou tabela vazia) e os
+    chamadores devem processar tudo — degradar para o comportamento antigo é
+    seguro; filtrar contra uma lista vazia apagaria a carteira inteira.
+    """
+    try:
+        from app.db import conectar
+        with conectar() as con:
+            return {d for (d,) in con.execute("SELECT doc FROM clientes WHERE ativo")}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def _data_br(s: str | None) -> date | None:
     try:
         return datetime.strptime((s or "").strip(), "%d/%m/%Y").date()

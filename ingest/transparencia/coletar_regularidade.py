@@ -36,8 +36,13 @@ def main():
     args = ap.parse_args()
 
     snap = snapshot_recente()
+    sys.path.insert(0, str(RAIZ / "backend"))
+    from app.carteira import docs_ativos
+
+    ativos = docs_ativos()
     cnpjs = ["".join(c for c in x if c.isdigit()) for x in args.cnpj] or [
-        d.name for d in sorted(snap.iterdir()) if d.is_dir() and (d / "carteira.json").exists()]
+        d.name for d in sorted(snap.iterdir())
+        if d.is_dir() and (d / "carteira.json").exists() and (not ativos or d.name in ativos)]
 
     # dirigentes cadastrados (PF): no MROSC, dirigente impedido contamina a entidade
     pessoas: dict[str, list] = {}
