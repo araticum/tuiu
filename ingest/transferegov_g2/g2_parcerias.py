@@ -161,10 +161,22 @@ def extrair_rota(
     return resumo
 
 
+def _rotas_do_modulo(base: str) -> list[str]:
+    """Descobre as rotas do módulo pelo openapi.json — em vez de manter a lista
+    à mão para cada módulo (parcerias tem 16, especiais 21)."""
+    spec = _get_json(f"{base}/openapi.json")
+    return [p.lstrip("/") for p in sorted((spec.get("paths") or {}).keys())
+            if p.lstrip("/") not in ("data-atualizacao", "openapi.json")]
+
+
 def main(argv: list[str] | None = None) -> int:
+    global BASE
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--rotas", nargs="+", default=ROTAS, choices=ROTAS, metavar="ROTA")
-    ap.add_argument("--out", default="data/parcerias", help="diretório-base de saída")
+    ap.add_argument("--modulo", choices=("parcerias", "especiais"), default="parcerias",
+                    help="módulo da g2 (especiais = ciclo Pix/emenda; rotas via openapi)")
+    ap.add_argument("--rotas", nargs="+", default=None, metavar="ROTA",
+                    help="rotas específicas (default: todas do módulo)")
+    ap.add_argument("--out", default=None, help="diretório-base de saída")
     ap.add_argument("--filtro", action="append", default=[], metavar="CHAVE=VALOR",
                     help="filtro de query da API (repetível); ex.: cnpj_ente_recebedor=…")
     ap.add_argument("--workers", type=int, default=4)
@@ -172,6 +184,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="limita páginas por rota (amostra/teste)")
     ap.add_argument("--sem-gzip", action="store_true")
     args = ap.parse_args(argv)
+
+    BASE = BASE.rsplit("/", 1)[0] + "/" + args.modulo
+    if args.rotas is None:
+        args.rotas = ROTAS if args.modulo == "parcerias" else _rotas_do_modulo(BASE)
+    if args.out is None:
+        args.out = f"data/{args.modulo}"
 
     filtros: dict[str, str] = {}
     for item in args.filtro:
