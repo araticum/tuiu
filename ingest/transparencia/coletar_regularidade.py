@@ -19,7 +19,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from regularidade_terceiro import consultar  # noqa: E402
+from regularidade_terceiro import consultar, consultar_pessoa  # noqa: E402
 
 
 def snapshot_recente() -> Path:
@@ -36,8 +36,13 @@ def main():
     args = ap.parse_args()
 
     snap = snapshot_recente()
+    sys.path.insert(0, str(RAIZ / "backend"))
+    from app.carteira import docs_ativos
+
+    ativos = docs_ativos()
     cnpjs = ["".join(c for c in x if c.isdigit()) for x in args.cnpj] or [
-        d.name for d in sorted(snap.iterdir()) if d.is_dir() and (d / "carteira.json").exists()]
+        d.name for d in sorted(snap.iterdir())
+        if d.is_dir() and (d / "carteira.json").exists() and (not ativos or d.name in ativos)]
 
     # dirigentes cadastrados (PF): no MROSC, dirigente impedido contamina a entidade
     pessoas: dict[str, list] = {}
@@ -58,13 +63,22 @@ def main():
 
         r["dirigentes"] = []
         for p in pessoas.get(cnpj, []):
-            rp = consultar(p["cpf"])
+            # por NOME, nao por CPF: o QSA da Receita entrega o CPF mascarado e
+            # `codigoSancionado` exige o documento inteiro — mandar 6 digitos
+            # devolveria vazio, parecendo "nada consta" sem ter consultado.
+            rp = consultar_pessoa(p["nome"], p["cpf"])
             r["dirigentes"].append({**p, "impedido": rp["impedido"],
+                                    "a_confirmar": len(rp["a_confirmar"]),
                                     "fontes": {k: v["registros"] for k, v in rp["fontes"].items()}})
             if rp["impedido"]:
                 r["impedido"] = True
                 r.setdefault("avisos", []).append(
                     f"dirigente {p['nome']} ({p['papel'] or 'sem papel'}) consta em cadastro de sanção")
+            elif rp["a_confirmar"]:
+                # homonimo possivel: nao acusa sozinho, mas nao esconde
+                r.setdefault("avisos", []).append(
+                    f"dirigente {p['nome']}: {len(rp['a_confirmar'])} sanção(ões) com o mesmo nome "
+                    f"e sem CPF no registro — CONFERIR manualmente")
         (snap / cnpj).mkdir(parents=True, exist_ok=True)
         (snap / cnpj / "regularidade.json").write_text(
             json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")

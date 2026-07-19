@@ -31,6 +31,7 @@ import json
 import os
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -81,25 +82,53 @@ def _chave() -> str:
             from segredos import get  # cofre DPAPI, só existe no Windows do dono
 
             k = get(NOME_CHAVE)
-        except BaseException:  # segredos.py faz sys.exit() sem keyring
+        except BaseException as e:  # segredos.py faz sys.exit() sem keyring
+            # sem isto o motivo some e vira "ausente" — o caso comum é rodar
+            # com um Python que não tem keyring (use o venv D:\venvs\flow).
+            print(f"  [cofre indisponível: {type(e).__name__}: {str(e)[:80]}]", file=sys.stderr)
             k = None
     if not k:
         sys.exit(f"{NOME_CHAVE} ausente (ambiente, .env ou cofre DPAPI)")
     return k
 
 
-def _get(path: str, params: dict, chave: str):
+# ARMADILHA 6 (aparece só quando a carteira cresce): a CGU limita ~90 req/min
+# das 06h às 23h59 (mais folgado de madrugada). São 3 rotas de sanção por CNPJ,
+# então 50 clientes = 150 requisições em rajada — a partir da ~90ª vem 429 e o
+# elo de regularidade derruba a cadeia. Com 3 clientes isso nunca apareceu.
+_INTERVALO = float(os.environ.get("TUIU_TRANSPARENCIA_INTERVALO", "0.75"))  # ~80/min
+_ultimo_get = 0.0
+
+
+def _respirar() -> None:
+    global _ultimo_get
+    espera = _INTERVALO - (time.monotonic() - _ultimo_get)
+    if espera > 0:
+        time.sleep(espera)
+    _ultimo_get = time.monotonic()
+
+
+def _get(path: str, params: dict, chave: str, tentativas: int = 4):
     url = f"{BASE}/{path}?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"chave-api-dados": chave, "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=60, context=_CTX) as r:
-            corpo = json.loads(r.read() or b"null")
-    except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}"
-    # Armadilha 2: erro pode vir com 200 e corpo dict
-    if not isinstance(corpo, list):
-        return None, f"corpo nao-lista (erro disfarcado): {str(corpo)[:200]}"
-    return corpo, None
+    for n in range(tentativas):
+        _respirar()
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=_CTX) as r:
+                corpo = json.loads(r.read() or b"null")
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and n < tentativas - 1:
+                # respeita o Retry-After quando vem; senão recua exponencialmente
+                pausa = float(e.headers.get("Retry-After") or 0) or min(60.0, 5.0 * 2 ** n)
+                print(f"  [429] limite da CGU — aguardando {pausa:.0f}s", flush=True)
+                time.sleep(pausa)
+                continue
+            return None, f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}"
+        # Armadilha 2: erro pode vir com 200 e corpo dict
+        if not isinstance(corpo, list):
+            return None, f"corpo nao-lista (erro disfarcado): {str(corpo)[:200]}"
+        return corpo, None
+    return None, "429 persistente apos as tentativas"
 
 
 def convenios(chave: str | None = None, **filtros) -> tuple[list[dict], str | None]:

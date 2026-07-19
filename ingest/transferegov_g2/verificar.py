@@ -63,9 +63,15 @@ def main():
                  "snapshot_fresco": dt_api[:10] == snap.name, "entes": []}
     total_ok = total_div = 0
 
+    sys.path.insert(0, str(RAIZ / "backend"))
+    from app.carteira import docs_ativos
+
+    ativos = docs_ativos()
     for sub in sorted(snap.iterdir()):
         cj = sub / "carteira.json"
         if not (sub.is_dir() and cj.exists()):
+            continue
+        if ativos and sub.name not in ativos:
             continue
         carteira = json.loads(cj.read_text(encoding="utf-8"))
         cnpj = carteira["cnpj"]

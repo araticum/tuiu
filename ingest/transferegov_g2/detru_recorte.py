@@ -27,10 +27,11 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from recorte_ente import DOGFOOD  # noqa: E402
+from recorte_ente import monitorados  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
 CACHE = RAIZ / "data" / "detru" / "cache"
+HISTORICO_ZIP = "siconv_historico_situacao.zip"
 
 
 def _digitos(v) -> str:
@@ -52,7 +53,19 @@ def _data_br(s: str):
         return None
 
 
+def _datahora_br(s: str):
+    try:
+        return datetime.strptime(s.strip(), "%d/%m/%Y %H:%M:%S")
+    except (ValueError, AttributeError):
+        return None
+
+
 def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
+    # nomes vêm da carteira; sem banco, o rótulo é o próprio CNPJ (não engana)
+    try:
+        rotulos = monitorados()
+    except SystemExit:
+        rotulos = {}
     props: dict[str, dict] = {}   # ID_PROPOSTA -> {cnpj, row}
     print("varredura de siconv_proposta.csv…", flush=True)
     for row in _linhas_zip("siconv_proposta.zip"):
@@ -67,13 +80,39 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
         if p:
             convs[p["cnpj"]].append(row)
 
+    # Última situação registrada de cada instrumento. É daqui que sai HÁ QUANTO
+    # TEMPO a prestação está parada na análise do CONCEDENTE — o convenio.csv
+    # diz a situação atual, mas não desde quando. Sem isso não dá para saber que
+    # o prazo do art. 97 (60d informatizado / 180d convencional) estourou.
+    dono = {r.get("NR_CONVENIO"): c for c, linhas in convs.items() for r in linhas}
+    ultima_sit: dict[str, dict] = {}
+    if (CACHE / HISTORICO_ZIP).exists():
+        print("varredura de siconv_historico_situacao.csv…", flush=True)
+        for row in _linhas_zip(HISTORICO_ZIP):
+            nr = row.get("NR_CONVENIO")
+            if nr not in dono:
+                continue
+            quando = _datahora_br(row.get("DIA_HISTORICO_SIT"))
+            atual = ultima_sit.get(nr)
+            if quando and (atual is None or quando > atual["_quando"]):
+                ultima_sit[nr] = {
+                    "NR_CONVENIO": nr, "DIA_HISTORICO_SIT": row.get("DIA_HISTORICO_SIT"),
+                    "HISTORICO_SIT": row.get("HISTORICO_SIT"),
+                    "DIAS_HISTORICO_SIT": row.get("DIAS_HISTORICO_SIT"), "_quando": quando,
+                }
+    else:
+        print(f"  [sem {HISTORICO_ZIP} — sem histórico de situação nesta rodada]", flush=True)
+
     resultados = {}
     for cnpj in cnpjs:
         minhas_props = [p["row"] for p in props.values() if p["cnpj"] == cnpj]
         meus_convs = convs[cnpj]
+        historico = [{k: v for k, v in h.items() if not k.startswith("_")}
+                     for nr, h in ultima_sit.items() if dono.get(nr) == cnpj]
         destino = base_out / cnpj / "legado"
         destino.mkdir(parents=True, exist_ok=True)
-        for nome, linhas in (("proposta", minhas_props), ("convenio", meus_convs)):
+        for nome, linhas in (("proposta", minhas_props), ("convenio", meus_convs),
+                             ("historico_situacao", historico)):
             if linhas:
                 with open(destino / f"{nome}.csv", "w", newline="", encoding="utf-8-sig") as fh:
                     w = csv.DictWriter(fh, fieldnames=list(linhas[0].keys()), delimiter=";")
@@ -97,7 +136,7 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
         prest_vencendo.sort()
 
         md = [
-            f"# Legado SICONV — {DOGFOOD.get(cnpj, cnpj)}",
+            f"# Legado SICONV — {rotulos.get(cnpj, cnpj)}",
             "",
             f"CNPJ `{cnpj}` · fonte: CSVs detru de {date.today().isoformat()} (carga diária ~09h)",
             "",
@@ -120,7 +159,7 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
             "contratos_repasse_ativos": len(repasse_ativos),
             "prest_contas_vencidas": sum(1 for l, *_ in prest_vencendo if l < hoje),
         }
-        print(f"  {DOGFOOD.get(cnpj, cnpj)}: {len(meus_convs)} instrumentos "
+        print(f"  {rotulos.get(cnpj, cnpj)}: {len(meus_convs)} instrumentos "
               f"({len(ativos)} ativos, {len(repasse_ativos)} contrato(s) de repasse ativo(s), "
               f"{resultados[cnpj]['prest_contas_vencidas']} prestação(ões) vencida(s))", flush=True)
     return resultados
@@ -132,7 +171,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    cnpjs = {_digitos(x) for x in (args.cnpj or list(DOGFOOD))}
+    cnpjs = {_digitos(x) for x in (args.cnpj or monitorados())}
     base_out = Path(args.out) if args.out else RAIZ / "data" / "recortes" / date.today().isoformat()
     resultados = recortar(cnpjs, base_out)
     (base_out / "_legado_resumo.json").write_text(

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tuiu-backend",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-3", "-m", "uvicorn", "app.main:app", "--app-dir", "backend", "--port", "8600"],
+      "port": 8600
+    }
+  ]
+}

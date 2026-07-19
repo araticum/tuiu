@@ -21,3 +21,6 @@ data/sessao/
 
 # relatorios entregues (dado de cliente)
 data/relatorios/
+
+# senha inicial gerada pelo ferramentas/usuario.py (600, some depois do 1o acesso)
+.senha-inicial-*

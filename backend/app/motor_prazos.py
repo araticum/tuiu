@@ -22,12 +22,13 @@ from __future__ import annotations
 import csv
 import json
 import sys
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.carteira import ROTULOS, snapshot_mais_recente  # noqa: E402
+from app.carteira import ROTULOS, docs_ativos, snapshot_mais_recente  # noqa: E402
 from app.db import conectar, migrar, regra_vigente  # noqa: E402
 
 CORTE_REGIME_NOVO = date(2023, 9, 1)  # Decreto 11.531 + PC 33 em vigor
@@ -70,12 +71,20 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
                     limite_pc = fim_vig + timedelta(days=int(regra["valor"]["dias"]))
                     base_pc = regra["base_legal"]
             if limite_pc:
+                situacao = (row.get("SIT_CONVENIO") or "").strip()
+                com_o_cliente = _bola_com_o_convenente(situacao)
                 marcos.append({
                     "cnpj": cnpj, "ente": ente, "fonte": "legado", "instrumento": nr,
-                    "tipo": "prestacao_contas", "data_limite": limite_pc,
-                    "descricao": f"Prestação de contas do {nr} ({row.get('SIT_CONVENIO')})",
-                    "base_legal": base_pc, "farol": _farol(limite_pc, hoje),
-                    "detalhes": {"regime": regime, "fim_vigencia": row.get("DIA_FIM_VIGENC_CONV")},
+                    "tipo": "prestacao_contas" if com_o_cliente else "prestacao_em_analise",
+                    "data_limite": limite_pc,
+                    "descricao": (f"Prestação de contas do {nr} ({situacao})" if com_o_cliente else
+                                  f"Prestação do {nr} já entregue — {situacao.lower()}"),
+                    "base_legal": base_pc,
+                    # prazo vencido só acusa quem PODE agir; com a prestação
+                    # entregue, o atraso é da análise, não do convenente
+                    "farol": _farol(limite_pc, hoje) if com_o_cliente else "ok",
+                    "detalhes": {"regime": regime, "fim_vigencia": row.get("DIA_FIM_VIGENC_CONV"),
+                                 "situacao": situacao, "bola_com": "convenente" if com_o_cliente else "concedente"},
                 })
             if fim_vig and fim_vig >= hoje:
                 marcos.append({
@@ -86,6 +95,65 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
                     "farol": _farol(fim_vig, hoje), "detalhes": {"regime": regime},
                 })
     return marcos
+
+
+ANALISE_DO_CONCEDENTE = ("PRESTACAO_CONTAS_ENVIADA_ANALISE", "PRESTACAO_CONTAS_EM_ANALISE")
+
+
+def _marco_analise_parada(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> list[dict]:
+    """O outro lado do prazo: quando a prestação já foi entregue, o art. 97 passa
+    a correr contra o CONCEDENTE (60 dias informatizado, 180 convencional).
+
+    Medido na carteira de 50: de 1.004 prestações paradas na análise, 953 (95%)
+    já estouraram o prazo do governo — a mais antiga há 4.878 dias. É o inverso
+    do que o motor dizia antes de hoje, quando acusava atraso do cliente.
+
+    Sai UM marco por cliente, não um por instrumento: 817 itens não são fila de
+    trabalho, são fato de carteira. O operador recebe uma tarefa — cobrar — e o
+    detalhe fica em `detalhes`.
+
+    O corte é o prazo CONVENCIONAL (o maior), porque o dado não diz qual
+    modalidade de análise se aplica. Acusar o governo de atraso pede o limite
+    mais conservador.
+    """
+    hist = dir_cnpj / "legado" / "historico_situacao.csv"
+    if not hist.exists():
+        return []
+    regra = regra_vigente(con, "prazo_analise_convencional", "completo_pc33", hoje)
+    limite = int((regra or {}).get("valor", {}).get("dias") or 180)
+    base = (regra or {}).get("base_legal", "PC 33/2023, art. 97")
+
+    paradas = []
+    with open(hist, encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh, delimiter=";"):
+            if (row.get("HISTORICO_SIT") or "").strip() not in ANALISE_DO_CONCEDENTE:
+                continue
+            try:
+                dias = int(row.get("DIAS_HISTORICO_SIT") or 0)
+            except ValueError:
+                continue
+            if dias > limite:
+                paradas.append({"instrumento": row.get("NR_CONVENIO"), "dias": dias,
+                                "desde": row.get("DIA_HISTORICO_SIT"),
+                                "situacao": row.get("HISTORICO_SIT")})
+    if not paradas:
+        return []
+
+    paradas.sort(key=lambda p: -p["dias"])
+    pior = paradas[0]
+    alem_da_prorrogacao = [p for p in paradas if p["dias"] > limite * 2]
+    return [{
+        "cnpj": cnpj, "ente": ente, "fonte": "legado", "instrumento": None,
+        "tipo": "analise_parada_concedente", "data_limite": None,
+        "descricao": (f"{len(paradas)} prestação(ões) entregues e paradas na análise do concedente "
+                      f"há mais de {limite} dias — a pior há {pior['dias']} dias "
+                      f"(instrumento {pior['instrumento']}, desde {pior['desde']})"),
+        "base_legal": f"{base} — o prazo de análise é do órgão, não do convenente",
+        "farol": "atencao",
+        "detalhes": {"limite_dias": limite, "total": len(paradas),
+                     "alem_da_prorrogacao": len(alem_da_prorrogacao),
+                     "piores": paradas[:10]},
+    }]
 
 
 def _marcos_especiais(con, cnpj: str, ente: str, carteira: dict, hoje: date) -> list[dict]:
@@ -244,6 +312,37 @@ def _marco_defeso(con, cnpj: str, ente: str, hoje: date) -> list[dict]:
     }]
 
 
+def _sem_acento(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s or "")
+                   if unicodedata.category(c) != "Mn").lower().strip()
+
+
+# Estágios em que a prestação JÁ FOI ENTREGUE e a bola está com o concedente.
+_EM_ANALISE = ("para analise", "em analise", "aprovada", "comprovada", "arquivada")
+
+
+def _bola_com_o_convenente(situacao: str | None) -> bool:
+    """True quando o CLIENTE ainda tem o que fazer na prestação de contas.
+
+    Sem esta distinção o motor acusa atraso de quem cumpriu: na carteira de 50,
+    **1.004 dos 1.301 "vencidos" eram prestações já entregues** aguardando
+    análise do governo. Alarme falso em 77% dos casos destrói a confiança no
+    produto inteiro — pior do que não avisar.
+
+    O casamento é deliberadamente estreito: só situação DE PRESTAÇÃO conta como
+    entregue. "Proposta/Plano de Trabalho Aprovado" contém "aprovado", mas é o
+    plano que foi aprovado, não a prestação — ali o prazo vencido é real.
+    """
+    s = _sem_acento(situacao)
+    if not s:
+        return True   # sem situação declarada, cobrar é o lado seguro
+    if "prestacao de contas" not in s:
+        return True   # ainda não chegou na fase de prestação
+    if "complementacao" in s:
+        return True   # devolvida para complementar: a bola volta pro cliente
+    return not any(t in s for t in _EM_ANALISE)
+
+
 def gerar_marcos(hoje: date | None = None) -> dict:
     hoje = hoje or date.today()
     snap = snapshot_mais_recente()
@@ -251,35 +350,68 @@ def gerar_marcos(hoje: date | None = None) -> dict:
         raise SystemExit("sem recortes em data/recortes — rode o ingest antes")
     todos: list[dict] = []
     with conectar() as con:
+        # Recorte no disco NÃO é carteira: quem sai de `clientes` (desativado,
+        # trocado) deixa o diretório para trás e continuaria gerando marco e
+        # alerta para sempre — fila do operador cheia de quem não é cliente.
+        ativos = docs_ativos()
+        ignorados = 0
         for sub in sorted(snap.iterdir()):
             cj = sub / "carteira.json"
             if not (sub.is_dir() and cj.exists()):
                 continue
             carteira = json.loads(cj.read_text(encoding="utf-8"))
             cnpj = carteira["cnpj"]
+            if ativos and cnpj not in ativos:
+                ignorados += 1
+                continue
             ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
             todos += _marcos_legado(con, cnpj, ente, sub, hoje)
+            todos += _marco_analise_parada(con, cnpj, ente, sub, hoje)
             todos += _marcos_g2(cnpj, ente, sub, hoje)          # ciclo novo: o que serve ao terceiro
             todos += _marcos_especiais(con, cnpj, ente, carteira, hoje)
             todos += _marco_defeso(con, cnpj, ente, hoje)
 
+        # marcador da rodada: tudo que não for tocado depois disto é lixo.
+        # clock_timestamp() avança dentro da transação; now() não.
+        inicio = con.execute("SELECT clock_timestamp()").fetchone()[0]
+
         for m in todos:
             con.execute(
                 """INSERT INTO marcos (cnpj, ente, fonte, instrumento, tipo, data_limite,
-                                       descricao, base_legal, farol, detalhes, snapshot)
+                                       descricao, base_legal, farol, detalhes, snapshot, atualizado_em)
                    VALUES (%(cnpj)s, %(ente)s, %(fonte)s, %(instrumento)s, %(tipo)s, %(data_limite)s,
-                           %(descricao)s, %(base_legal)s, %(farol)s, %(detalhes)s, %(snapshot)s)
+                           %(descricao)s, %(base_legal)s, %(farol)s, %(detalhes)s, %(snapshot)s,
+                           clock_timestamp())
                    ON CONFLICT (cnpj, fonte, tipo, COALESCE(instrumento,''),
                                 COALESCE(data_limite,'0001-01-01'::date))
                    DO UPDATE SET descricao=EXCLUDED.descricao, base_legal=EXCLUDED.base_legal,
                                  farol=EXCLUDED.farol, detalhes=EXCLUDED.detalhes,
-                                 snapshot=EXCLUDED.snapshot, atualizado_em=now()""",
+                                 snapshot=EXCLUDED.snapshot, atualizado_em=clock_timestamp()""",
                 {**m, "detalhes": json.dumps(m.get("detalhes") or {}, ensure_ascii=False),
                  "snapshot": snap.name},
             )
+        # A base espelha ESTA rodada. Duas fontes de lixo, ambas reais:
+        #  - cliente que saiu da carteira, senão seus marcos sobrevivem ao
+        #    desligamento e seguem alimentando alerta e fila;
+        #  - marco não regerado agora (instrumento sumiu do recorte, ou mudou de
+        #    tipo — foi o caso da prestação entregue, que deixou de ser
+        #    `prestacao_contas` e virou `prestacao_em_analise`: o upsert não casa
+        #    tipo diferente, então a linha "vencida" antiga conviveria com a nova).
+        #
+        # O corte é por `atualizado_em`, NÃO por `snapshot`: snapshot é a data do
+        # recorte, e duas rodadas no mesmo dia compartilham o valor — foi assim
+        # que 1.027 duplicatas sobreviveram à primeira tentativa de limpeza.
+        # `clock_timestamp()` (e não `now()`) porque now() é o início da
+        # transação e seria igual ao marcador, não maior.
+        removidos = con.execute(
+            "DELETE FROM marcos WHERE atualizado_em < %s"
+            + (" OR NOT (cnpj = ANY(%s))" if ativos else ""),
+            (inicio, list(ativos)) if ativos else (inicio,)).rowcount
         con.commit()
         n = con.execute("SELECT count(*) FROM marcos").fetchone()[0]
-    return {"snapshot": snap.name, "gerados_ou_atualizados": len(todos), "total_na_base": n}
+    return {"snapshot": snap.name, "gerados_ou_atualizados": len(todos),
+            "total_na_base": n, "recortes_fora_da_carteira": ignorados,
+            "marcos_removidos": removidos}
 
 
 def gerar_alertas(hoje: date | None = None) -> int:
@@ -326,6 +458,9 @@ def gerar_alertas(hoje: date | None = None) -> int:
 def main():
     print("migracoes aplicadas:", migrar() or "nenhuma nova")
     resumo = gerar_marcos()
+    if resumo.get("recortes_fora_da_carteira") or resumo.get("marcos_removidos"):
+        print(f"fora da carteira: {resumo['recortes_fora_da_carteira']} recorte(s) ignorado(s), "
+              f"{resumo['marcos_removidos']} marco(s) removido(s)")
     print(f"marcos: {resumo['gerados_ou_atualizados']} gerados/atualizados "
           f"(total {resumo['total_na_base']}) do snapshot {resumo['snapshot']}")
     print(f"alertas novos na outbox: {gerar_alertas()}")

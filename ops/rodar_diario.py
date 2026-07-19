@@ -26,7 +26,9 @@ RAIZ = Path(__file__).resolve().parents[1]
 LOGS = RAIZ / "ops" / "logs"
 CACHE_DETRU = RAIZ / "data" / "detru" / "cache"
 DOWNLOADS = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov"
-ZIPS_DETRU = ["siconv_convenio.zip", "siconv_proposta.zip"]
+# o historico de situacao (102 MB) e o que diz HA QUANTO TEMPO a prestacao
+# esta parada na analise do concedente — sem ele nao da para acusar o art. 97
+ZIPS_DETRU = ["siconv_convenio.zip", "siconv_proposta.zip", "siconv_historico_situacao.zip"]
 IDADE_MAX_H = 20
 
 
@@ -75,7 +77,13 @@ def _avisar_falha(nome: str, rc: int) -> None:
     sys.path.insert(0, str(RAIZ / "backend"))
     try:
         from app import seriema
+        from app.config import envio_externo_liberado
 
+        # respeita o interruptor: canal pausado não pode ser furado por aqui,
+        # senão a pausa vale para o cliente e não para nós
+        if not envio_externo_liberado("seriema"):
+            print("[aviso] canal seriema desligado no painel — falha só no log", file=sys.stderr)
+            return
         if not seriema.configurado():
             print("[aviso] seriema não configurado — falha só no log", file=sys.stderr)
             return
@@ -112,13 +120,21 @@ def main():
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])
         if os.environ.get("TUIU_IMAP_HOST"):
             _passo(fh, "inbox (e-mail -> eventos)", [py, "ingest/inbox/coletar_inbox.py"])
+        # Fonte de TERCEIRO e instavel (o INLABS cai). Nao-essencial: uma
+        # queda deles nao pode derrubar a vigilancia de prazo dos clientes.
+        # A falha aparece no log e a norma fica pendente no console.
+        _passo(fh, "vigilia normativa (DOU)", [py, "ingest/normas/vigia_dou.py"],
+               essencial=False)
         _passo(fh, "notificador (outbox/webhook/whatsapp)", [py, "backend/app/notificador.py"])
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:
-            # Depende do dump g2 COMPLETO (data/parcerias/), que nem toda máquina
-            # tem — e é prospecção nossa, não serviço de cliente.
-            _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"],
+            # Prospeccao NOSSA, nao servico de cliente -> nao-essencial.
+            # `prospects.py` ranqueia ENTIDADES PRIVADAS, que e o publico do Tuiu
+            # desde a correcao de escopo de 18/07. O `radar_comercial --so-municipios`
+            # ranqueia PREFEITURAS: sobrou do escopo antigo e ficou rodando todo dia
+            # produzindo lista de quem nao e nosso cliente.
+            _passo(fh, "prospeccao interna (entidades privadas)", [py, "ferramentas/prospects.py"],
                    essencial=False)
         _log(fh, "=== cadeia concluída ===")
 
