@@ -28,6 +28,7 @@ ARMADILHAS DA API (conhecimento de campo do dono, confirmado ao vivo 18/07/2026)
 from __future__ import annotations
 
 import json
+import os
 import ssl
 import sys
 import urllib.error
@@ -39,9 +40,14 @@ sys.path.insert(0, r"C:\Users\pedro\Desktop\Flumen\ferramentas")
 
 BASE = "https://api.portaldatransparencia.gov.br/api-de-dados"
 PAGINA = 15  # fixo pela API (armadilha 3)
+
+# TLS verificado. A chave da API viaja no header desta conexão: sem verificar o
+# certificado, qualquer intermediário lê a chave. Só desliga com opt-in
+# explícito (TUIU_TLS_INSECURE=1), para máquina com DLP que intercepta TLS.
 _CTX = ssl.create_default_context()
-_CTX.check_hostname = False
-_CTX.verify_mode = ssl.CERT_NONE
+if os.environ.get("TUIU_TLS_INSECURE") == "1":
+    _CTX.check_hostname = False
+    _CTX.verify_mode = ssl.CERT_NONE
 
 # Armadilha 4b: descrições corrompidas -> mapa por ID (fonte: levantamento do dono).
 TIPO_INSTRUMENTO = {
@@ -51,12 +57,34 @@ TIPO_INSTRUMENTO = {
 }
 
 
-def _chave() -> str:
-    from segredos import get  # cofre DPAPI
+NOME_CHAVE = "PORTAL_TRANSPARENCIA_API_KEY"
 
-    k = get("PORTAL_TRANSPARENCIA_API_KEY")
+
+def _do_env_file() -> str | None:
+    """`.env` na raiz do repo — é assim que o segredo chega no araticum (o cofre
+    DPAPI é do Windows e não existe no host). Fora do git, chmod 600."""
+    env = Path(__file__).resolve().parents[2] / ".env"
+    if not env.exists():
+        return None
+    for linha in env.read_text(encoding="utf-8").splitlines():
+        nome, _, valor = linha.partition("=")
+        if nome.strip() == NOME_CHAVE:
+            return valor.strip().strip("'\"") or None
+    return None
+
+
+def _chave() -> str:
+    # ordem: ambiente -> .env (Linux/host) -> cofre DPAPI (Windows)
+    k = os.environ.get(NOME_CHAVE) or _do_env_file()
     if not k:
-        sys.exit("PORTAL_TRANSPARENCIA_API_KEY ausente no cofre DPAPI")
+        try:
+            from segredos import get  # cofre DPAPI, só existe no Windows do dono
+
+            k = get(NOME_CHAVE)
+        except BaseException:  # segredos.py faz sys.exit() sem keyring
+            k = None
+    if not k:
+        sys.exit(f"{NOME_CHAVE} ausente (ambiente, .env ou cofre DPAPI)")
     return k
 
 

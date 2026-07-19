@@ -1,0 +1,7 @@
+# O repo é editado no Windows e executado no araticum (Ubuntu). Sem isto, o
+# checkout converte para CRLF e o shell do Linux quebra com "\r: command not
+# found" — falha que só aparece no host, nunca na máquina de quem escreveu.
+*.sh    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.sql   text eol=lf
