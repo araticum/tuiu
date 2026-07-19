@@ -36,18 +36,28 @@ ESPECIAIS = BASE.rsplit("/", 1)[0] + "/especiais"
 def monitorados() -> dict[str, str]:
     """Quem o pipeline acompanha. FONTE DE VERDADE = tabela `clientes` (a
     carteira do operador cresce por dado, não por commit). O dicionário abaixo
-    é só semente/fallback quando não há banco."""
+    é só semente, para banco AINDA VAZIO.
+
+    Banco indisponível NÃO cai na semente: com a carteira real na tabela, o
+    fallback silencioso faria a cadeia coletar os poucos CNPJs de semente e
+    declarar sucesso — os clientes de verdade ficariam sem vigilância e sem
+    ninguém saber. Falhar alto é o comportamento certo."""
+    import sys as _sys
+    _sys.path.insert(0, str(RAIZ / "backend"))
     try:
-        import sys as _sys
-        _sys.path.insert(0, str(RAIZ / "backend"))
         from app.db import conectar
         with conectar() as con:
             linhas = con.execute(
                 "SELECT doc, COALESCE(apelido, nome) FROM clientes WHERE ativo ORDER BY 2").fetchall()
-        if linhas:
-            return {d: n for d, n in linhas}
-    except Exception:  # noqa: BLE001 — sem banco, cai na semente
-        pass
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(
+            f"nao consegui ler a carteira em `clientes` ({type(e).__name__}: {str(e)[:120]}).\n"
+            "Abortando: seguir com a semente coletaria a carteira ERRADA em silencio.\n"
+            "Confira TUIU_DSN e se o banco esta de pe."
+        ) from e
+    if linhas:
+        return {d: n for d, n in linhas}
+    print("  [carteira vazia em `clientes` — usando a semente DOGFOOD]", flush=True)
     return dict(DOGFOOD)
 
 

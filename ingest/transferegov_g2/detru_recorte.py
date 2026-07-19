@@ -27,7 +27,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from recorte_ente import DOGFOOD  # noqa: E402
+from recorte_ente import monitorados  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
 CACHE = RAIZ / "data" / "detru" / "cache"
@@ -53,6 +53,11 @@ def _data_br(s: str):
 
 
 def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
+    # nomes vêm da carteira; sem banco, o rótulo é o próprio CNPJ (não engana)
+    try:
+        rotulos = monitorados()
+    except SystemExit:
+        rotulos = {}
     props: dict[str, dict] = {}   # ID_PROPOSTA -> {cnpj, row}
     print("varredura de siconv_proposta.csv…", flush=True)
     for row in _linhas_zip("siconv_proposta.zip"):
@@ -97,7 +102,7 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
         prest_vencendo.sort()
 
         md = [
-            f"# Legado SICONV — {DOGFOOD.get(cnpj, cnpj)}",
+            f"# Legado SICONV — {rotulos.get(cnpj, cnpj)}",
             "",
             f"CNPJ `{cnpj}` · fonte: CSVs detru de {date.today().isoformat()} (carga diária ~09h)",
             "",
@@ -120,7 +125,7 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
             "contratos_repasse_ativos": len(repasse_ativos),
             "prest_contas_vencidas": sum(1 for l, *_ in prest_vencendo if l < hoje),
         }
-        print(f"  {DOGFOOD.get(cnpj, cnpj)}: {len(meus_convs)} instrumentos "
+        print(f"  {rotulos.get(cnpj, cnpj)}: {len(meus_convs)} instrumentos "
               f"({len(ativos)} ativos, {len(repasse_ativos)} contrato(s) de repasse ativo(s), "
               f"{resultados[cnpj]['prest_contas_vencidas']} prestação(ões) vencida(s))", flush=True)
     return resultados
@@ -132,7 +137,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    cnpjs = {_digitos(x) for x in (args.cnpj or list(DOGFOOD))}
+    cnpjs = {_digitos(x) for x in (args.cnpj or monitorados())}
     base_out = Path(args.out) if args.out else RAIZ / "data" / "recortes" / date.today().isoformat()
     resultados = recortar(cnpjs, base_out)
     (base_out / "_legado_resumo.json").write_text(

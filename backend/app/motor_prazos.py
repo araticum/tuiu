@@ -251,12 +251,20 @@ def gerar_marcos(hoje: date | None = None) -> dict:
         raise SystemExit("sem recortes em data/recortes — rode o ingest antes")
     todos: list[dict] = []
     with conectar() as con:
+        # Recorte no disco NÃO é carteira: quem sai de `clientes` (desativado,
+        # trocado) deixa o diretório para trás e continuaria gerando marco e
+        # alerta para sempre — fila do operador cheia de quem não é cliente.
+        ativos = {d for (d,) in con.execute("SELECT doc FROM clientes WHERE ativo")}
+        ignorados = 0
         for sub in sorted(snap.iterdir()):
             cj = sub / "carteira.json"
             if not (sub.is_dir() and cj.exists()):
                 continue
             carteira = json.loads(cj.read_text(encoding="utf-8"))
             cnpj = carteira["cnpj"]
+            if ativos and cnpj not in ativos:
+                ignorados += 1
+                continue
             ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
             todos += _marcos_legado(con, cnpj, ente, sub, hoje)
             todos += _marcos_g2(cnpj, ente, sub, hoje)          # ciclo novo: o que serve ao terceiro
@@ -277,9 +285,17 @@ def gerar_marcos(hoje: date | None = None) -> dict:
                 {**m, "detalhes": json.dumps(m.get("detalhes") or {}, ensure_ascii=False),
                  "snapshot": snap.name},
             )
+        # marcos de quem saiu da carteira também têm que sair da base, senão
+        # sobrevivem ao desligamento e seguem alimentando alerta e fila
+        removidos = 0
+        if ativos:
+            removidos = con.execute(
+                "DELETE FROM marcos WHERE NOT (cnpj = ANY(%s))", (list(ativos),)).rowcount
         con.commit()
         n = con.execute("SELECT count(*) FROM marcos").fetchone()[0]
-    return {"snapshot": snap.name, "gerados_ou_atualizados": len(todos), "total_na_base": n}
+    return {"snapshot": snap.name, "gerados_ou_atualizados": len(todos),
+            "total_na_base": n, "recortes_fora_da_carteira": ignorados,
+            "marcos_removidos": removidos}
 
 
 def gerar_alertas(hoje: date | None = None) -> int:
@@ -326,6 +342,9 @@ def gerar_alertas(hoje: date | None = None) -> int:
 def main():
     print("migracoes aplicadas:", migrar() or "nenhuma nova")
     resumo = gerar_marcos()
+    if resumo.get("recortes_fora_da_carteira") or resumo.get("marcos_removidos"):
+        print(f"fora da carteira: {resumo['recortes_fora_da_carteira']} recorte(s) ignorado(s), "
+              f"{resumo['marcos_removidos']} marco(s) removido(s)")
     print(f"marcos: {resumo['gerados_ou_atualizados']} gerados/atualizados "
           f"(total {resumo['total_na_base']}) do snapshot {resumo['snapshot']}")
     print(f"alertas novos na outbox: {gerar_alertas()}")
