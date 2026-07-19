@@ -37,14 +37,20 @@ def _log(fh, msg: str):
     fh.flush()
 
 
-def _passo(fh, nome: str, cmd: list[str]) -> None:
+def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
+    """`essencial=False` para elos INTERNOS (prospecção): eles não servem cliente,
+    então não podem interromper a cadeia que vigia prazo nem disparar alarme."""
     _log(fh, f"-> {nome}: {' '.join(cmd)}")
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", errors="replace")
     fh.write(proc.stdout or "")
     fh.write(proc.stderr or "")
     if proc.returncode != 0:
+        if not essencial:
+            _log(fh, f"~ {nome} falhou (rc={proc.returncode}) — elo interno, cadeia segue")
+            return
         _log(fh, f"X {nome} FALHOU (rc={proc.returncode}) — cadeia interrompida")
+        _avisar_falha(nome, proc.returncode)
         raise SystemExit(proc.returncode)
     _log(fh, f"OK {nome} ok ({round(time.time() - t0, 1)}s)")
 
@@ -61,6 +67,26 @@ def _refresh_detru(fh):
         with urllib.request.urlopen(f"{DOWNLOADS}/{nome}", timeout=300) as r, open(alvo, "wb") as out:
             while bloco := r.read(1 << 20):
                 out.write(bloco)
+
+
+def _avisar_falha(nome: str, rc: int) -> None:
+    """Cadeia parada = prazo sem vigilância. Falha silenciosa é o pior defeito
+    possível neste produto, então o vermelho sai do host e vai pro grupo."""
+    sys.path.insert(0, str(RAIZ / "backend"))
+    try:
+        from app import seriema
+
+        if not seriema.configurado():
+            print("[aviso] seriema não configurado — falha só no log", file=sys.stderr)
+            return
+        seriema.enviar_grupo(
+            f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc}).\n"
+            f"Os prazos NÃO foram recalculados hoje.\n"
+            f"journalctl --user -u tuiu-diario -n 50",
+            chave_entrega=f"cadeia-falhou-{date.today().isoformat()}-{nome}",
+        )
+    except Exception as e:  # avisar nunca pode mascarar a falha original
+        print(f"[aviso] falha ao notificar: {e}", file=sys.stderr)
 
 
 def main():
@@ -90,7 +116,10 @@ def main():
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:
-            _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"])
+            # Depende do dump g2 COMPLETO (data/parcerias/), que nem toda máquina
+            # tem — e é prospecção nossa, não serviço de cliente.
+            _passo(fh, "radar comercial interno", [py, "ferramentas/radar_comercial.py", "--so-municipios"],
+                   essencial=False)
         _log(fh, "=== cadeia concluída ===")
 
 

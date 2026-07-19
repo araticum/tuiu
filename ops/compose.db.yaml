@@ -1,0 +1,29 @@
+# Postgres DEDICADO do Tuiú.
+#
+# Por que separado: no araticum não há Postgres nativo, e o `veredas-db` é
+# PRODUÇÃO do oasis.v2 — não se encosta. Este container é do Tuiú, com volume
+# próprio, e escuta só em loopback.
+#
+#   docker compose -f ops/compose.db.yaml up -d
+#   docker compose -f ops/compose.db.yaml down          # não apaga o volume
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tuiu-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tuiu
+      POSTGRES_HOST_AUTH_METHOD: trust   # só loopback; sem exposição externa
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - tuiu_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tuiu"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tuiu_pgdata:
