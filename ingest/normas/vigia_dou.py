@@ -44,23 +44,37 @@ from app.db import conectar, migrar  # noqa: E402
 BASE = "https://inlabs.in.gov.br"
 SECOES = ("DO1", "DO1E")   # DO1E = edição extra; a PC 45/2026 saiu numa delas
 
-# O que nos interessa. Amplo de propósito na primeira peneira: falso positivo
-# custa uma linha para o operador descartar; falso negativo custa uma regra
-# errada rodando por meses em 50 clientes.
-TERMOS = {
+# Termos em DOIS níveis, por causa de uma medição: na primeira versão, 40 de 45
+# normas vieram casando SÓ "prestação de contas" — expressão que aparece em
+# qualquer portaria. Vigília com 40 itens por dia para triar é vigília que
+# ninguém lê, e aí ela não serve para nada.
+#
+# ESPECÍFICOS disparam sozinhos (só aparecem no nosso domínio).
+# GENÉRICOS só contam acompanhados: 2 deles juntos, ou 1 ao lado de um
+# específico. Assim "transferências da União" + "prestação de contas" entra, e
+# "prestação de contas" solta fica de fora.
+ESPECIFICOS = {
     "transferegov": r"transfer[êe]gov",
-    "transferência da União": r"transfer[êe]ncias?\s+(?:de\s+recursos\s+)?d[ao]\s+Uni[ãa]o",
-    "convênio/contrato de repasse": r"conv[êe]nios?\s+e\s+contratos?\s+de\s+repasse",
-    "prestação de contas": r"presta[çc][ãa]o\s+de\s+contas",
-    # `\s*` em volta das barras: ao tirar a marcação, cada tag vira um ESPAÇO,
-    # e "MGI/<b>MF</b>/CGU" chega como "MGI/ MF /CGU". Padrão literal perderia.
     "PC 33/2023": r"Portaria\s+Conjunta\s+MGI\s*/\s*MF\s*/\s*CGU\s+n[ºo°]?\s*33",
     "PC 28/2024": r"Portaria\s+Conjunta\s+MGI\s*/\s*MF\s*/\s*CGU\s+n[ºo°]?\s*28",
     "PI 424/2016": r"Portaria\s+Interministerial\s+n[ºo°]?\s*424",
     "Decreto 11.531": r"Decreto\s+n[ºo°]?\s*11\.?531",
-    "emenda parlamentar": r"emendas?\s+parlamentar",
+    "convênio/contrato de repasse": r"conv[êe]nios?\s+e\s+contratos?\s+de\s+repasse",
     "MROSC": r"Lei\s+n[ºo°]?\s*13\.?019",
 }
+GENERICOS = {
+    "transferência da União": r"transfer[êe]ncias?\s+(?:de\s+recursos\s+)?d[ao]\s+Uni[ãa]o",
+    "prestação de contas": r"presta[çc][ãa]o\s+de\s+contas",
+    "emenda parlamentar": r"emendas?\s+parlamentar",
+}
+TERMOS = {**ESPECIFICOS, **GENERICOS}
+
+
+def relevante(casou: list[str]) -> bool:
+    """Pelo menos um específico, ou dois genéricos juntos."""
+    especificos = [t for t in casou if t in ESPECIFICOS]
+    genericos = [t for t in casou if t in GENERICOS]
+    return bool(especificos) or len(genericos) >= 2
 
 
 def _segredo(nome: str) -> str:
@@ -178,7 +192,7 @@ def varrer(op, dia: date) -> list[dict]:
             plano = _plano(texto)
             casou = [rotulo for rotulo, padrao in TERMOS.items()
                      if re.search(padrao, plano, re.I)]
-            if not casou:
+            if not relevante(casou):
                 continue
             # <Identifica> quando vem; senão o cabeçalho no corpo. Sem os dois,
             # registra pelo arquivo — deixar passar norma por falta de rótulo
@@ -229,7 +243,23 @@ def main():
             dias.append(d)
             d += timedelta(days=1)
     else:
-        dias = [hoje - timedelta(days=1), hoje]
+        # Retoma de onde parou, não de "ontem". O INLABS cai com frequência; se a
+        # vigília falhar três dias seguidos, uma janela fixa pularia esses dias
+        # EM SILÊNCIO — e norma publicada no buraco nunca seria vista.
+        with conectar() as con:
+            m = con.execute("SELECT ate FROM vigia_marcador WHERE fonte='DOU'").fetchone()
+        inicio = (m[0] if m else hoje - timedelta(days=1))
+        if (hoje - inicio).days > 30:
+            inicio = hoje - timedelta(days=30)   # teto: não rebaixar o DOU inteiro
+            print(f"  [marcador muito antigo — varrendo os últimos 30 dias]", flush=True)
+        dias = []
+        d = inicio
+        while d <= hoje:
+            dias.append(d)
+            d += timedelta(days=1)
+        if len(dias) > 2:
+            print(f"  retomando de {inicio} ({len(dias)} dia(s) desde a última varredura)",
+                  flush=True)
 
     op = entrar()
     todos_novos = []

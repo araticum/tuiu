@@ -66,3 +66,29 @@ def test_termo_nao_pega_norma_de_outro_assunto():
     """Peneira ampla, mas não a ponto de trazer o DOU inteiro."""
     fora = _plano("Portaria nº 12 que dispõe sobre horário de funcionamento do protocolo")
     assert not [r for r, p in TERMOS.items() if re.search(p, fora, re.I)]
+
+
+# --------------------------------------------- peneira: sinal x ruido (medido)
+
+from vigia_dou import ESPECIFICOS, GENERICOS, relevante  # noqa: E402
+
+
+@pytest.mark.parametrize("casou,esperado", [
+    (["prestação de contas"], False),        # 40 de 45 vinham só por isto
+    (["emenda parlamentar"], False),
+    (["transferência da União"], False),
+    (["transferegov"], True),                # específico dispara sozinho
+    (["PC 33/2023"], True),
+    (["MROSC"], True),
+    (["prestação de contas", "transferência da União"], True),   # 2 genéricos
+    (["prestação de contas", "PC 28/2024"], True),
+    ([], False),
+])
+def test_generico_nao_dispara_sozinho(casou, esperado):
+    """Vigília com 40 itens por dia é vigília que ninguém lê. Termo genérico
+    ('prestação de contas' aparece em qualquer portaria) só conta acompanhado."""
+    assert relevante(casou) is esperado
+
+
+def test_niveis_nao_se_sobrepoem():
+    assert not (set(ESPECIFICOS) & set(GENERICOS)), "termo em dois níveis torna a regra ambígua"
