@@ -75,7 +75,13 @@ def _avisar_falha(nome: str, rc: int) -> None:
     sys.path.insert(0, str(RAIZ / "backend"))
     try:
         from app import seriema
+        from app.config import envio_externo_liberado
 
+        # respeita o interruptor: canal pausado não pode ser furado por aqui,
+        # senão a pausa vale para o cliente e não para nós
+        if not envio_externo_liberado("seriema"):
+            print("[aviso] canal seriema desligado no painel — falha só no log", file=sys.stderr)
+            return
         if not seriema.configurado():
             print("[aviso] seriema não configurado — falha só no log", file=sys.stderr)
             return
