@@ -40,6 +40,7 @@ PROXIMO_PASSO = {
     "parcela_prevista": "Conferir se a parcela foi liberada; cobrar se não saiu",
     # o prazo estourado aqui e do ORGAO — a acao e cobrar, nao produzir
     "analise_parada_concedente": "Cobrar decisão do concedente (art. 97) sobre as prestações paradas",
+    "proposta_rejeitada": "Ler o parecer do órgão e decidir: corrigir e reapresentar, ou encerrar",
 }
 
 

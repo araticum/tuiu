@@ -141,6 +141,53 @@ def _grava(dir_: Path, nome: str, linhas: list[dict]):
             fh.write(json.dumps(_sem_nome_pf(l), ensure_ascii=False) + "\n")
 
 
+_CHAVE_ESPECIAIS: str | None = None
+
+
+def _purgar_orfaos(base_out: Path, cnpjs: list[str]) -> None:
+    """Apaga recorte de quem NÃO está mais na carteira.
+
+    O código já ignora esses diretórios (app.carteira.docs_ativos), mas eles
+    ficavam no disco e confundem qualquer leitura ad-hoc — numa auditoria da
+    própria carteira eu contei 103 "clientes" onde havia 50.
+
+    Guarda: lista vazia NÃO purga. Se a carteira falhar em carregar, apagar tudo
+    seria transformar um erro de leitura em perda de dado.
+    """
+    if not cnpjs or not base_out.exists():
+        return
+    import shutil
+    alvo = set(cnpjs)
+    apagados = 0
+    for d in base_out.iterdir():
+        if d.is_dir() and d.name.isdigit() and d.name not in alvo:
+            shutil.rmtree(d, ignore_errors=True)
+            apagados += 1
+    if apagados:
+        print(f"   [limpeza] {apagados} recorte(s) de fora da carteira removido(s)", flush=True)
+
+
+def _chave_cnpj_especiais() -> str:
+    """Nome do parâmetro de CNPJ em `beneficiarios_especiais`, descoberto UMA vez.
+
+    Antes, todo cliente sem beneficiário refazia a descoberta e repetia a
+    consulta. Só que **transferência especial é do ENTE** (art. 166-A) — nossa
+    carteira é de OSC, então "sem beneficiário" é a resposta CERTA para quase
+    todos, e o retrabalho disparava 2 chamadas extras por cliente, todo dia,
+    para reconfirmar um vazio previsível.
+    """
+    global _CHAVE_ESPECIAIS
+    if _CHAVE_ESPECIAIS is None:
+        try:
+            amostra = _get_json(f"{ESPECIAIS}/beneficiarios_especiais?pagina=1&tamanho_da_pagina=1")["data"]
+            _CHAVE_ESPECIAIS = next(
+                (k for k in (amostra[0] if amostra else {}) if "cnpj" in k.lower()),
+                "cnpj_beneficiario")
+        except Exception:  # noqa: BLE001 — sem descoberta, usa o nome conhecido
+            _CHAVE_ESPECIAIS = "cnpj_beneficiario"
+    return _CHAVE_ESPECIAIS
+
+
 def recortar(cnpj: str, destino: Path, workers: int) -> dict:
     print(f"== {cnpj} ({DOGFOOD.get(cnpj, 'ente')})", flush=True)
     r: dict[str, list] = {}
@@ -164,12 +211,8 @@ def recortar(cnpj: str, destino: Path, workers: int) -> dict:
         BASE, "beneficiario_emenda_parlamentar", {"nr_cnpj_beneficiario_emenda": cnpj})
 
     # Especiais: acha o(s) beneficiário(s) pelo CNPJ e traz os planos por id.
-    beneficiarios = _todas_paginas(ESPECIAIS, "beneficiarios_especiais", {"cnpj_beneficiario": cnpj})
-    if not beneficiarios:  # nome do parâmetro pode divergir; tenta a chave real da 1ª página
-        amostra = _get_json(f"{ESPECIAIS}/beneficiarios_especiais?pagina=1&tamanho_da_pagina=1")["data"]
-        chave = next((k for k in (amostra[0] if amostra else {}) if "cnpj" in k.lower()), None)
-        if chave:
-            beneficiarios = _todas_paginas(ESPECIAIS, "beneficiarios_especiais", {chave: cnpj})
+    beneficiarios = _todas_paginas(ESPECIAIS, "beneficiarios_especiais",
+                                   {_chave_cnpj_especiais(): cnpj})
     planos = []
     for b in beneficiarios:
         bid = next((v for k, v in b.items() if k.lower().startswith("id") and "benef" in k.lower()), None)
@@ -211,6 +254,12 @@ def carteira(cnpj: str, dados: dict, dt_api: str) -> tuple[dict, str]:
     sit_prop = Counter(p.get("situacao_proposta") for p in props)
     sit_parc = Counter(p.get("in_situacao_parceria") for p in r.get("parceria", []))
     contas = r.get("parceria-conta", [])
+    # ⚠️ ARMADILHA DA FONTE: `vl_saldo_conta_corrente` vem preenchido em 0,1%
+    # das contas (116 de 89.568 no dump de 17/07/2026), enquanto
+    # `dt_referencia_saldo_conta_corrente` vem em 35% — a g2 publica a DATA de
+    # um saldo que não publica. Zero aqui significa "não informado", NÃO "conta
+    # zerada": não use este campo para dizer que o cliente está sem dinheiro.
+    # O saldo utilizável é o de investimento (44% preenchido).
     saldo_cc = sum(float(c.get("vl_saldo_conta_corrente") or 0) for c in contas)
     saldo_inv = sum(float(c.get("vl_saldo_conta_investimento") or 0) for c in contas)
     emendas = r.get("beneficiario_emenda_parlamentar", [])
@@ -321,6 +370,8 @@ def main():
     cnpjs = ["".join(c for c in x if c.isdigit()) for x in (args.cnpj or list(monitorados()))]
     dt_api = data_atualizacao()
     base_out = Path(args.out) if args.out else RAIZ / "data" / "recortes" / dt_api[:10]
+
+    _purgar_orfaos(base_out, cnpjs)
 
     for cnpj in cnpjs:
         destino = base_out / cnpj

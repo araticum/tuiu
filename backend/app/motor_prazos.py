@@ -268,6 +268,22 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date) -> list[dict]:
             "detalhes": {"proposta": p.get("id_proposta"), "situacao": p.get("situacao_proposta")},
         })
 
+    # Último parecer de cada proposta. O arquivo `analise-proposta` é coletado
+    # desde sempre e nunca era lido — e é o órgão dizendo POR ESCRITO o que
+    # exigiu. Sem ele, "cobrar o concedente" é um pedido no escuro; com ele, o
+    # operador sabe o que foi pedido antes de a análise parar.
+    pareceres: dict[str, dict] = {}
+    for a in _linhas_gz(sub / "parcerias" / "analise-proposta.jsonl.gz"):
+        idp = str(a.get("id_proposta"))
+        quando = str(a.get("dh_analise_proposta") or "")
+        if idp not in pareceres or quando > pareceres[idp]["quando"]:
+            pareceres[idp] = {
+                "quando": quando,
+                "resultado": a.get("in_resultado_analise"),
+                "fase": a.get("in_fase_analise"),
+                "parecer": (a.get("ds_parecer") or "").strip()[:600],
+            }
+
     # 3) Proposta parada em análise/elaboração: ação de cobrança (sem prazo legal)
     for p in props.values():
         sit = str(p.get("situacao_proposta") or "")
@@ -278,21 +294,47 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date) -> list[dict]:
             except (ValueError, TypeError):
                 continue
             if dias >= 60:
+                ultimo = pareceres.get(str(p["id_proposta"]))
                 marcos.append({
                     "cnpj": cnpj, "ente": ente, "fonte": "g2", "instrumento": str(p["id_proposta"]),
                     "tipo": "proposta_parada", "data_limite": None,
-                    "descricao": f"Proposta {p['id_proposta']} em análise há {dias} dias — cobrar o concedente",
+                    "descricao": (f"Proposta {p['id_proposta']} em análise há {dias} dias — "
+                                  f"cobrar o concedente"
+                                  + (f" (último parecer: {ultimo['resultado']} na fase "
+                                     f"{ultimo['fase']})" if ultimo else "")),
                     "base_legal": "acompanhamento da análise (sem prazo legal fixo)",
                     "farol": "acao_imediata" if dias >= 180 else "atencao",
-                    "detalhes": {"dias_em_analise": dias, "objeto": (p.get("ds_objeto") or "")[:120]},
+                    "detalhes": {"dias_em_analise": dias, "objeto": (p.get("ds_objeto") or "")[:120],
+                                 "ultimo_parecer": ultimo},
                 })
         elif "Complementa" in sit:
+            ultimo = pareceres.get(str(p["id_proposta"]))
             marcos.append({
                 "cnpj": cnpj, "ente": ente, "fonte": "g2", "instrumento": str(p["id_proposta"]),
                 "tipo": "complementacao_pendente", "data_limite": None,
-                "descricao": f"Proposta {p['id_proposta']} aguardando COMPLEMENTAÇÃO — responder ao órgão",
+                "descricao": (f"Proposta {p['id_proposta']} aguardando COMPLEMENTAÇÃO — responder ao órgão"
+                              + (f". Parecer: {ultimo['parecer'][:180]}" if ultimo and ultimo["parecer"] else "")),
                 "base_legal": "diligência do concedente (prazo fixado no parecer)",
-                "farol": "acao_imediata", "detalhes": {"situacao": sit},
+                "farol": "acao_imediata",
+                "detalhes": {"situacao": sit, "ultimo_parecer": ultimo},
+            })
+        elif "Rejeitada" in sit or "Reprovada" in sit:
+            # Rejeitada não gerava marco nenhum: a proposta morria em silêncio.
+            # Com o parecer em mãos dá para dizer POR QUE, e a decisão de
+            # reapresentar deixa de ser adivinhação.
+            ultimo = pareceres.get(str(p["id_proposta"]))
+            marcos.append({
+                "cnpj": cnpj, "ente": ente, "fonte": "g2", "instrumento": str(p["id_proposta"]),
+                "tipo": "proposta_rejeitada", "data_limite": None,
+                "descricao": (f"Proposta {p['id_proposta']} REJEITADA — avaliar se reapresenta"
+                              + (f". Motivo do órgão: {ultimo['parecer'][:200]}"
+                                 if ultimo and ultimo["parecer"] else " (sem parecer publicado)")),
+                "base_legal": "parecer de análise do concedente (Transferegov)",
+                # não é prazo correndo: é decisão a tomar, e sem data não pode
+                # entrar como "ação imediata" ao lado do que vence amanhã
+                "farol": "atencao",
+                "detalhes": {"situacao": sit, "objeto": (p.get("ds_objeto") or "")[:120],
+                             "ultimo_parecer": ultimo},
             })
     return marcos
 

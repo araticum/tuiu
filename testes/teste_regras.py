@@ -236,3 +236,71 @@ def test_analise_parada_cobra_o_orgao_e_nao_o_cliente(con, tmp_path):
 
 def test_sem_historico_nao_inventa_marco(con, tmp_path):
     assert _marco_analise_parada(con, "00000000000000", "Teste", tmp_path, date.today()) == []
+
+
+# ------------------------------------------------ parecer do orgao (analise-proposta)
+
+def test_proposta_rejeitada_vira_marco_com_o_motivo(con, tmp_path):
+    """Rejeitada não gerava marco nenhum — a proposta morria em silêncio. Com o
+    parecer, a decisão de reapresentar deixa de ser adivinhação."""
+    p = tmp_path / "parcerias"
+    _escrever(p, "proposta", [
+        {"id_proposta": 7, "situacao_proposta": "Rejeitada", "ds_objeto": "obra X"},
+    ])
+    _escrever(p, "analise-proposta", [
+        {"id_proposta": 7, "dh_analise_proposta": "2024-01-01T10:00:00",
+         "in_resultado_analise": "Rejeitada", "in_fase_analise": "Plano de Trabalho",
+         "ds_parecer": "Planilha orcamentaria sem composicao de custos unitarios."},
+        {"id_proposta": 7, "dh_analise_proposta": "2026-05-05T10:00:00",
+         "in_resultado_analise": "Rejeitada", "in_fase_analise": "Plano de Trabalho",
+         "ds_parecer": "PARECER MAIS RECENTE: memorial descritivo ausente."},
+    ])
+    marcos = _marcos_g2("00000000000000", "Teste", tmp_path, date.today())
+    rej = [m for m in marcos if m["tipo"] == "proposta_rejeitada"]
+    assert len(rej) == 1
+    assert "MAIS RECENTE" in rej[0]["descricao"], "usa o parecer mais novo, não o primeiro"
+    assert rej[0]["detalhes"]["ultimo_parecer"]["resultado"] == "Rejeitada"
+    assert rej[0]["farol"] == "atencao", "é decisão a tomar, não prazo correndo"
+
+
+def test_proposta_parada_diz_o_que_o_orgao_pediu(con, tmp_path):
+    hoje = date.today()
+    p = tmp_path / "parcerias"
+    _escrever(p, "proposta", [
+        {"id_proposta": 9, "situacao_proposta": "Em Análise",
+         "dt_envio_analise": (hoje - timedelta(days=200)).isoformat(), "ds_objeto": "parada"},
+    ])
+    _escrever(p, "analise-proposta", [
+        {"id_proposta": 9, "dh_analise_proposta": "2026-01-01T10:00:00",
+         "in_resultado_analise": "Em Complementação", "in_fase_analise": "Proposta",
+         "ds_parecer": "Justificar a escolha do fornecedor."},
+    ])
+    m = [x for x in _marcos_g2("00000000000000", "Teste", tmp_path, hoje)
+         if x["tipo"] == "proposta_parada"][0]
+    assert "Em Complementação" in m["descricao"], "cobrar sem saber o que pediram é pedido no escuro"
+    assert m["detalhes"]["ultimo_parecer"]["parecer"].startswith("Justificar")
+
+
+def test_sem_analise_o_marco_continua_saindo(con, tmp_path):
+    """Ausência de parecer não pode suprimir o marco — só empobrece a descrição."""
+    p = tmp_path / "parcerias"
+    _escrever(p, "proposta", [{"id_proposta": 11, "situacao_proposta": "Rejeitada"}])
+    m = [x for x in _marcos_g2("00000000000000", "Teste", tmp_path, date.today())
+         if x["tipo"] == "proposta_rejeitada"]
+    assert len(m) == 1 and "sem parecer publicado" in m[0]["descricao"]
+
+
+def test_purga_de_orfaos_nao_apaga_com_carteira_vazia(tmp_path):
+    """Guarda: se a carteira falhar em carregar, apagar tudo transformaria erro
+    de leitura em perda de dado."""
+    import sys as _s
+    _s.path.insert(0, str(RAIZ / "ingest" / "transferegov_g2"))
+    from recorte_ente import _purgar_orfaos
+
+    (tmp_path / "11111111111111").mkdir()
+    (tmp_path / "22222222222222").mkdir()
+    _purgar_orfaos(tmp_path, [])
+    assert len(list(tmp_path.iterdir())) == 2, "carteira vazia não purga nada"
+    _purgar_orfaos(tmp_path, ["11111111111111"])
+    restantes = {d.name for d in tmp_path.iterdir()}
+    assert restantes == {"11111111111111"}, "purga só quem saiu da carteira"
