@@ -8,11 +8,55 @@ atendimento.
 
 from __future__ import annotations
 
+import csv
 import json
 from datetime import date
 
-from app.carteira import ROTULOS, listar_entes
+from app.carteira import ROTULOS, listar_entes, snapshot_mais_recente
 from app.db import conectar
+
+
+def _risco_orgaos(con, doc: str) -> list[dict]:
+    """Base rate de desfecho dos ÓRGÃOS onde o cliente tem convênios.
+
+    Transforma a tabela nacional (base_rates_orgao) em conselho por cliente:
+    "seus convênios estão em Cidades (59% de morte histórica) e Saúde (4%)".
+    O órgão de cada convênio vem do legado (convenio→proposta por ID_PROPOSTA);
+    a taxa é a do regime LEGADO (o preditivo — o novo não tem finais).
+    """
+    snap = snapshot_mais_recente()
+    if snap is None:
+        return []
+    leg = snap / doc / "legado"
+    prop_csv, conv_csv = leg / "proposta.csv", leg / "convenio.csv"
+    if not (prop_csv.exists() and conv_csv.exists()):
+        return []
+    orgao_de = {}
+    with open(prop_csv, encoding="utf-8-sig", newline="") as fh:
+        for r in csv.DictReader(fh, delimiter=";"):
+            orgao_de[r.get("ID_PROPOSTA")] = (r.get("DESC_ORGAO_SUP") or "").strip()
+    contagem: dict[str, int] = {}
+    with open(conv_csv, encoding="utf-8-sig", newline="") as fh:
+        for r in csv.DictReader(fh, delimiter=";"):
+            o = orgao_de.get(r.get("ID_PROPOSTA"))
+            if o:
+                contagem[o] = contagem.get(o, 0) + 1
+    if not contagem:
+        return []
+    rows = con.execute(
+        "SELECT orgao, pct_morte, pct_sucesso, pct_ressalva, n, preditivo"
+        " FROM base_rates_orgao WHERE regime='legado_pi424' AND orgao = ANY(%s)",
+        (list(contagem),)).fetchall()
+    br = {o: (m, s, res, n, p) for o, m, s, res, n, p in rows}
+    saida = []
+    for o, cnt in sorted(contagem.items(), key=lambda x: -x[1]):
+        m, s, res, n, p = br.get(o, (None, None, None, None, False))
+        saida.append({"orgao": o, "convenios_do_cliente": cnt,
+                      "pct_morte": float(m) if m is not None else None,
+                      "pct_sucesso": float(s) if s is not None else None,
+                      "pct_ressalva": float(res) if res is not None else None,
+                      "base_n": n, "preditivo": p})
+    return saida
 
 
 def _cadastro(con, doc: str) -> dict:
@@ -81,6 +125,7 @@ def montar(doc: str) -> dict:
             "andamento": _andamento(con, doc),
             "diario": _diario(con, doc),
             "triagens": _triagens(con, doc),
+            "risco_orgaos": _risco_orgaos(con, doc),
         }
 
     if base:

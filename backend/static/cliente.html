@@ -50,6 +50,9 @@
 
     <div class="sec">Andamento recente</div>
     <div class="box" id="andamento"></div>
+
+    <div class="sec">Risco por órgão <small style="color:#8ba3bf;font-weight:400">— base rate histórica (regime legado)</small></div>
+    <div class="box" id="risco"></div>
   </div>
 
   <div>
@@ -102,6 +105,19 @@ function carregar(){
       <div class="li"><span class="dot ${p.farol}"></span>${p.descricao}
         <div class="meta">${dbr(p.data_limite)}${p.dias!=null?` · ${p.dias<0?-p.dias+"d atrás":"em "+p.dias+"d"}`:""} · ${p.base_legal||""}</div>
       </div>`).join("") || `<div class="meta">nenhum prazo aberto</div>`;
+
+    const ro = f.risco_orgaos||[];
+    document.getElementById("risco").innerHTML = ro.length ? ro.map(x=>{
+      const m = x.pct_morte;
+      const cor = m==null ? "#8ba3bf" : (m>=15 ? "#ff6b6b" : (m<5 ? "#2fbf71" : "#e8b93c"));
+      const taxa = m==null ? "sem base rate" :
+        `<b style="color:${cor}">${m}% morte</b> · ${x.pct_sucesso}% sucesso`;
+      return `<div style="padding:5px 0;border-bottom:1px solid #1e2a3a">
+        <div>${(x.orgao||"").replace(/^MINIST[ÉE]RIO (DA |DO |DE |DAS |DOS )?/i,"")}
+          <small style="color:#8ba3bf">· ${x.convenios_do_cliente} convênio(s)</small></div>
+        <div style="font-size:12.5px">${taxa}${x.preditivo?"":' <span style="color:#8ba3bf">(amostra pequena)</span>'}</div>
+      </div>`;
+    }).join("") : '<div style="color:#8ba3bf">Sem convênios legados com órgão identificado.</div>';
 
     document.getElementById("andamento").innerHTML = (f.andamento||[]).slice(0,10).map(a=>`
       <div class="li">${a.origem==="inbox"?"📩":"🔔"} ${a.rotulo}
