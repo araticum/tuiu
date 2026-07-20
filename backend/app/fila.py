@@ -34,7 +34,7 @@ PROXIMO_PASSO = {
     "impedimento_cadastro": "Sanar a pendência que gerou o impedimento e pedir baixa",
     "andamento": "Ler a mudança e decidir a ação (o órgão mexeu no instrumento)",
     # ciclo novo (g2) — o que mais aparece na carteira de terceiros
-    "proposta_parada": "Cobrar o concedente sobre a análise parada",
+    "proposta_parada": "Cobrar o concedente (art. 97) sobre a análise parada",
     "complementacao_pendente": "Responder a complementação exigida pelo órgão",
     "etapa_cronograma": "Executar/comprovar a etapa do cronograma físico",
     "parcela_prevista": "Conferir se a parcela foi liberada; cobrar se não saiu",

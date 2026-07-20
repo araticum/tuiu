@@ -281,6 +281,26 @@ def test_proposta_parada_diz_o_que_o_orgao_pediu(con, tmp_path):
     assert m["detalhes"]["ultimo_parecer"]["parecer"].startswith("Justificar")
 
 
+def test_proposta_parada_invoca_art97_pela_regra_vigente(con, tmp_path):
+    """Parada em análise não é 'acompanhamento': é o art. 97 correndo contra o
+    concedente (60d informatizado). Com `con`, o marco cita a regra vigente e
+    diz há quantos dias o prazo LEGAL estourou — a munição da cobrança."""
+    hoje = date.today()
+    p = tmp_path / "parcerias"
+    _escrever(p, "proposta", [
+        {"id_proposta": 5, "situacao_proposta": "Em Análise",
+         "dt_envio_analise": (hoje - timedelta(days=90)).isoformat(), "ds_objeto": "x"},
+    ])
+    m = [x for x in _marcos_g2("00000000000000", "Teste", tmp_path, hoje, con)
+         if x["tipo"] == "proposta_parada"][0]
+    assert "art. 97" in m["base_legal"]
+    assert "do concedente, não do proponente" in m["base_legal"]
+    assert m["detalhes"]["limite_informatizado"] == 60
+    assert m["detalhes"]["vencido_ha_dias"] == 30, "90 − 60 = 30 dias além do art. 97"
+    assert "vencido há 30 dias" in m["descricao"]
+    assert m["farol"] == "atencao", "passou dos 60 mas não dos 180 — cobrança, não emergência do cliente"
+
+
 def test_sem_analise_o_marco_continua_saindo(con, tmp_path):
     """Ausência de parecer não pode suprimir o marco — só empobrece a descrição."""
     p = tmp_path / "parcerias"

@@ -218,9 +218,13 @@ def _linhas_gz(caminho: Path):
             yield json.loads(l)
 
 
-def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date) -> list[dict]:
+def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date, con=None) -> list[dict]:
     """Prazos do CICLO NOVO (g2) — a fonte que importa para o TERCEIRO EXECUTOR,
-    que normalmente não tem estoque no detru nem transferência especial."""
+    que normalmente não tem estoque no detru nem transferência especial.
+
+    `con` é opcional: com ele, a proposta parada cita o art. 97 pela REGRA
+    VIGENTE (versionada); sem ele (testes de unidade sem banco), cai num fallback
+    com o mesmo prazo. O resto dos marcos não depende de regra."""
     marcos: list[dict] = []
     pdir = sub / "parcerias"
 
@@ -284,7 +288,17 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date) -> list[dict]:
                 "parecer": (a.get("ds_parecer") or "").strip()[:600],
             }
 
-    # 3) Proposta parada em análise/elaboração: ação de cobrança (sem prazo legal)
+    # 3) Proposta parada em análise: agora com os DENTES do art. 97. O prazo do
+    #    concedente é LEGAL, não "acompanhamento". Transferegov é informatizado,
+    #    então o limite aplicável é o de 60 dias (art. 97, I). Passou disso, o
+    #    atraso é do órgão e vira alavanca de cobrança — com o artigo na mão.
+    #    Escala para ação imediata só além do prazo convencional (180d), quando
+    #    a análise está claramente abandonada sob qualquer leitura.
+    regra_inf = regra_vigente(con, "prazo_analise_informatizado", "completo_pc33", hoje) if con else None
+    limite_inf = int((regra_inf or {}).get("valor", {}).get("dias") or 60)
+    base_inf = (regra_inf or {}).get("base_legal") or "PC 33/2023, art. 97, I e §1º"
+    regra_conv = regra_vigente(con, "prazo_analise_convencional", "completo_pc33", hoje) if con else None
+    limite_conv = int((regra_conv or {}).get("valor", {}).get("dias") or 180)
     for p in props.values():
         sit = str(p.get("situacao_proposta") or "")
         if "Análise" in sit or "Analise" in sit:
@@ -293,18 +307,21 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date) -> list[dict]:
                 dias = (hoje - envio).days
             except (ValueError, TypeError):
                 continue
-            if dias >= 60:
+            if dias >= limite_inf:
                 ultimo = pareceres.get(str(p["id_proposta"]))
+                vencido_ha = dias - limite_inf
                 marcos.append({
                     "cnpj": cnpj, "ente": ente, "fonte": "g2", "instrumento": str(p["id_proposta"]),
                     "tipo": "proposta_parada", "data_limite": None,
                     "descricao": (f"Proposta {p['id_proposta']} em análise há {dias} dias — "
+                                  f"art. 97 ({limite_inf}d informatizado) vencido há {vencido_ha} dias; "
                                   f"cobrar o concedente"
                                   + (f" (último parecer: {ultimo['resultado']} na fase "
                                      f"{ultimo['fase']})" if ultimo else "")),
-                    "base_legal": "acompanhamento da análise (sem prazo legal fixo)",
-                    "farol": "acao_imediata" if dias >= 180 else "atencao",
-                    "detalhes": {"dias_em_analise": dias, "objeto": (p.get("ds_objeto") or "")[:120],
+                    "base_legal": f"{base_inf} — o prazo de análise é do concedente, não do proponente",
+                    "farol": "acao_imediata" if dias >= limite_conv else "atencao",
+                    "detalhes": {"dias_em_analise": dias, "limite_informatizado": limite_inf,
+                                 "vencido_ha_dias": vencido_ha, "objeto": (p.get("ds_objeto") or "")[:120],
                                  "ultimo_parecer": ultimo},
                 })
         elif "Complementa" in sit:
@@ -409,7 +426,7 @@ def gerar_marcos(hoje: date | None = None) -> dict:
             ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
             todos += _marcos_legado(con, cnpj, ente, sub, hoje)
             todos += _marco_analise_parada(con, cnpj, ente, sub, hoje)
-            todos += _marcos_g2(cnpj, ente, sub, hoje)          # ciclo novo: o que serve ao terceiro
+            todos += _marcos_g2(cnpj, ente, sub, hoje, con)     # ciclo novo: o que serve ao terceiro
             todos += _marcos_especiais(con, cnpj, ente, carteira, hoje)
             todos += _marco_defeso(con, cnpj, ente, hoje)
 
