@@ -81,7 +81,11 @@ WantedBy=default.target
 UNIT
 
 systemctl --user daemon-reload
-systemctl --user enable --now tuiu-console.service
+systemctl --user enable tuiu-console.service
+# RESTART, não só enable: uvicorn não recarrega código sozinho. Sem isto o
+# console segue rodando o código de quando subiu — deploy que "passou" mas
+# a mudança não entrou (foi assim com RBAC, contas e base-rates até 20/07).
+systemctl --user restart tuiu-console.service
 sleep 2
 systemctl --user is-active tuiu-console.service | sed 's/^/  console: /'
 curl -s -o /dev/null -w "  /login.html -> %{http_code}\n" http://127.0.0.1:8600/login.html

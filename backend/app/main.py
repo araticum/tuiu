@@ -434,4 +434,24 @@ def perfil_login(corpo: dict, request: Request, response: Response):
     return {"ok": True, "login": msg}
 
 
+@app.get("/api/base-rates")
+def base_rates(request: Request):
+    """Inteligência de desfecho por órgão × regime. Operador-only (é a carteira
+    inteira do país, não um cliente)."""
+    if request.state.usuario.get("papel") != "operador":
+        raise HTTPException(403, "fora do seu acesso")
+    try:
+        with conectar() as con:
+            cols = ["orgao", "regime", "n", "pct_sucesso", "pct_ressalva", "pct_morte",
+                    "pct_em_curso", "prestacoes_paradas", "mediana_dias_parada", "preditivo",
+                    "computado_em"]
+            rows = con.execute(
+                "SELECT " + ", ".join(cols) + " FROM base_rates_orgao"
+                " ORDER BY preditivo DESC, pct_morte DESC NULLS LAST").fetchall()
+            return {"disponivel": True,
+                    "base_rates": [dict(zip(cols, [str(x) if hasattr(x, 'isoformat') else x for x in r])) for r in rows]}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "base_rates": []}
+
+
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))
