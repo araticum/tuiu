@@ -28,7 +28,9 @@ MIN_PREDITIVO = 100           # abaixo disso a taxa é ruído, não previsão
 
 # Classificação do SIT_CONVENIO em desfecho. Ordem importa: ressalva antes de
 # sucesso (é um sucesso qualificado), morte pelos terminais negativos.
-SQL = f"""
+# `min_n` é injetável para os testes (fixture pequena não alcança o corte de 30).
+def _sql(min_n: int = 30) -> str:
+    return f"""
 WITH osc AS (
     SELECT id_proposta, desc_orgao_sup AS orgao FROM proposta
     WHERE natureza_juridica = 'Organização da Sociedade Civil' AND desc_orgao_sup IS NOT NULL
@@ -73,17 +75,24 @@ par AS (
 SELECT d.orgao, d.regime, d.n, d.pct_sucesso, d.pct_ressalva, d.pct_morte, d.pct_em_curso,
        COALESCE(p.paradas,0), p.mediana
 FROM desf d LEFT JOIN par p USING (orgao, regime)
-WHERE d.n >= 30
+WHERE d.n >= {min_n}
 ORDER BY d.regime, d.n DESC
 """
+
+
+def computar_em(con, min_n: int = 30) -> list[tuple]:
+    """Roda a classificação sobre uma conexão DuckDB qualquer (lake real ou
+    fixture de teste). É aqui que vive o moat — o CASE-WHEN de desfecho."""
+    return con.execute(_sql(min_n=min_n)).fetchall()
 
 
 def computar() -> list[tuple]:
     import duckdb
     con = duckdb.connect(LAKE, read_only=True)
-    linhas = con.execute(SQL).fetchall()
-    con.close()
-    return linhas
+    try:
+        return computar_em(con)
+    finally:
+        con.close()
 
 
 def carregar(linhas: list[tuple]) -> None:

@@ -30,7 +30,10 @@ LIMITE_ART97 = 60            # dias, art.97 informatizado (Transferegov é infor
 MIN_PREDITIVO = 100
 MIN_LINHA = 50               # mediana precisa de massa
 
-SQL = f"""
+
+# `min_linha` injetável para os testes (fixture pequena).
+def _sql(min_linha: int = MIN_LINHA) -> str:
+    return f"""
 WITH ev AS (
   SELECT h.id_proposta, upper(h.historico_sit) sit,
          try_strptime(h.dia_historico_sit,'%d/%m/%Y %H:%M:%S') dt
@@ -59,17 +62,23 @@ SELECT regime, orgao, count(*) n,
    CAST(median(dias) AS INT) mediana,
    CAST(quantile_cont(dias, 0.9) AS INT) p90,
    round(100.0*count(*) FILTER (WHERE dias > {LIMITE_ART97})/count(*), 0) pct_acima
-FROM dur GROUP BY 1,2 HAVING count(*) >= {MIN_LINHA}
+FROM dur GROUP BY 1,2 HAVING count(*) >= {min_linha}
 ORDER BY regime DESC, mediana DESC
 """
+
+
+def computar_em(con, min_linha: int = MIN_LINHA) -> list[tuple]:
+    """Latência por par de evento sobre uma conexão DuckDB qualquer (lake ou fixture)."""
+    return con.execute(_sql(min_linha=min_linha)).fetchall()
 
 
 def computar() -> list[tuple]:
     import duckdb
     con = duckdb.connect(LAKE, read_only=True)
-    linhas = con.execute(SQL).fetchall()
-    con.close()
-    return linhas
+    try:
+        return computar_em(con)
+    finally:
+        con.close()
 
 
 def carregar(linhas: list[tuple]) -> None:

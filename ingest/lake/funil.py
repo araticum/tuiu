@@ -33,7 +33,9 @@ MIN_LINHA = 30               # não emite órgão com menos que isso resolvido
 # DIA_PROPOSTA é dd/mm/yyyy e parseia 100% (probado). Regime pela DATA da
 # proposta (não da celebração — a proposta pode nunca virar convênio).
 # "resolvida" = já aprovada OU reprovada; em_curso não entra na taxa.
-SQL = f"""
+# `min_linha` injetável para os testes (fixture pequena).
+def _sql(min_linha: int = MIN_LINHA) -> str:
+    return f"""
 WITH prop AS (
     SELECT p.desc_orgao_sup AS orgao,
         CASE WHEN try_strptime(p.dia_proposta,'%d/%m/%Y') < {CORTE}
@@ -65,17 +67,23 @@ SELECT orgao, regime,
           / nullif(count(*) FILTER (WHERE desf<>'em_curso'),0),1) AS pct_reprovada,
     round(100.0*count(*) FILTER (WHERE desf='em_curso')/count(*),1) AS pct_em_curso
 FROM cls GROUP BY 1,2
-HAVING count(*) FILTER (WHERE desf<>'em_curso') >= {MIN_LINHA}
+HAVING count(*) FILTER (WHERE desf<>'em_curso') >= {min_linha}
 ORDER BY regime, n_resolvidas DESC
 """
+
+
+def computar_em(con, min_linha: int = MIN_LINHA) -> list[tuple]:
+    """Classificação do funil sobre uma conexão DuckDB qualquer (lake ou fixture)."""
+    return con.execute(_sql(min_linha=min_linha)).fetchall()
 
 
 def computar() -> list[tuple]:
     import duckdb
     con = duckdb.connect(LAKE, read_only=True)
-    linhas = con.execute(SQL).fetchall()
-    con.close()
-    return linhas
+    try:
+        return computar_em(con)
+    finally:
+        con.close()
 
 
 def carregar(linhas: list[tuple]) -> None:
