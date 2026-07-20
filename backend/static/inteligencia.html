@@ -41,10 +41,10 @@
   <a href="/">← Cockpit</a> · <a href="/fila.html">Fila</a> · <a href="/normas.html">Normas</a> · <a href="/conta.html">Conta ▸</a>
 </header>
 <div class="porque">
-  18 anos de SICONV destilados em <b>probabilidade</b>, nas duas pontas da jornada:
-  <b>antes de protocolar</b> — a que órgão a proposta de OSC aprova (ex.: ~92% de reprovação
-  na Agric. Familiar contra ~36% no Esporte) — e <b>depois de celebrar</b>, quanto o convênio
-  morre. Ninguém no nicho mostra a odds antes de escrever a primeira linha do plano de trabalho.
+  18 anos de SICONV destilados em <b>probabilidade</b>, nas três faces da jornada:
+  <b>① antes de protocolar</b> — a que órgão a proposta de OSC aprova; <b>② quanto o concedente
+  demora</b> para decidir (e se estoura os 60 dias do art. 97); e <b>③ depois de celebrar</b>,
+  quanto o convênio morre. Ninguém no nicho mostra isto antes de escrever a primeira linha do plano.
 </div>
 <div class="regime-nota" id="regimenota">
   ⚠️ <b>Tudo é datado — a regra muda a cada trimestre.</b> Mas as duas pontas envelhecem diferente:
@@ -88,6 +88,35 @@ function blocoFunil(funil) {
     `</div>`;
 }
 
+// ---- LATÊNCIA (art.97): quanto o concedente demora para decidir ----
+function blocoLatencia(lat) {
+  if (!lat || !lat.length) return "";
+  const novo   = lat.filter(f => f.regime === 'novo_pc33'   && f.preditivo);
+  const legado = lat.filter(f => f.regime === 'legado_pi424' && f.preditivo);
+  const ctx    = lat.filter(f => !f.preditivo);
+  const cab = `<tr><th>órgão</th><th class="num">propostas</th><th class="num">mediana</th>
+    <th class="num">p90 (cauda)</th><th class="num">furam 60d (art.97)</th></tr>`;
+  const linha = (f, contexto) => {
+    const med = +f.mediana_dias, ac = +f.pct_acima_limite;
+    const cm = med>60 ? 'morte-alta' : (med<=45 ? 'morte-baixa' : '');
+    return `<tr class="${contexto ? 'contexto' : ''}">
+      <td>${ORGAO(f.orgao)}</td>
+      <td class="num">${N(f.n)}</td>
+      <td class="num ${cm}">${f.mediana_dias ?? '—'}d</td>
+      <td class="num" style="color:var(--dim)">${f.p90_dias ?? '—'}d</td>
+      <td class="num ${ac>=70?'morte-alta':(ac<30?'morte-baixa':'')}">${f.limite_legal? (f.pct_acima_limite+'%') : '<span style="color:var(--dim)">sem prazo à época</span>'}</td>
+    </tr>`;
+  };
+  const tabela = (rows, contexto) => `<table>${cab}${rows.map(f => linha(f, contexto)).join("")}</table>`;
+  return `<div class="bloco">
+    <div class="titulo">② Quanto o concedente demora — art. 97 (60 dias)
+      <small>tempo real da proposta enviada até a decisão; o limite legal só vale no ciclo novo</small></div>` +
+    (novo.length ? `<div class="sec">Sob o prazo do art. 97 — PC 33 (${novo.length} órgãos)</div>${tabela(novo, false)}` : "") +
+    (legado.length ? `<div class="sec">Histórico — PI 424, sem prazo legal (contexto)</div>${tabela(legado, true)}` : "") +
+    (ctx.length ? `<div class="sec">Amostra pequena</div>${tabela(ctx, true)}` : "") +
+    `</div>`;
+}
+
 // ---- DESFECHO (downstream): morte do convênio já celebrado ----
 function blocoDesfecho(base) {
   const pred = base.filter(b => b.preditivo);
@@ -108,7 +137,7 @@ function blocoDesfecho(base) {
     <th class="num">taxa de MORTE</th><th class="num">sucesso</th><th class="num">c/ ressalva</th>
     <th class="num">prest. paradas (med)</th></tr>`;
   return `<div class="bloco">
-    <div class="titulo">② Depois de celebrar — desfecho do convênio
+    <div class="titulo">③ Depois de celebrar — desfecho do convênio
       <small>dos que viraram convênio, quantos morrem (anula/cancela/rejeita/TCE)</small></div>
     <div class="sec">Preditivo — regime legado, com finais (${pred.length} órgãos)</div>
     <table>${cab}${pred.map(b => linha(b, false)).join("")}</table>` +
@@ -127,9 +156,11 @@ async function carregar() {
   const carimbo = d.funil?.[0]?.computado_em || d.base_rates?.[0]?.computado_em || "";
   alvo.innerHTML =
     blocoFunil(d.funil) +
+    blocoLatencia(d.latencia) +
     blocoDesfecho(d.base_rates) +
     `<div class="porque">Fonte: SICONV (detru) · computado ${carimbo.replace('T',' ').slice(0,16)}.
-       Funil só de OSC; "morte" = anulado/cancelado/rejeitado/inadimplente/TCE.</div>`;
+       Funil e latência só de OSC; latência = da proposta enviada à decisão do concedente (art.97 = 60d, só no ciclo novo);
+       "morte" = anulado/cancelado/rejeitado/inadimplente/TCE.</div>`;
 }
 carregar();
 </script>

@@ -121,10 +121,18 @@ function carregar(){
         funil = `<div style="font-size:12.5px">funil: <b style="color:${fc}">${a}% aprova</b>
           <span style="color:#8ba3bf">· ${reg}${fu.preditivo?"":" (amostra pequena)"}</span></div>`;
       }
+      const la = x.latencia;
+      let lat = "";
+      if (la && la.mediana_dias!=null){
+        const lc = la.mediana_dias>60 ? "#e8b93c" : "#8ba3bf";
+        const art = la.limite_legal ? ` · <b style="color:${la.pct_acima_limite>=70?'#ff6b6b':'#e8b93c'}">${la.pct_acima_limite}% furam ${la.limite_legal}d (art.97)</b>` : " · sem prazo à época";
+        lat = `<div style="font-size:12.5px">análise: <b style="color:${lc}">~${la.mediana_dias}d</b><span style="color:#8ba3bf">${art}</span></div>`;
+      }
       return `<div style="padding:6px 0;border-bottom:1px solid #1e2a3a">
         <div>${(x.orgao||"").replace(/^MINIST[ÉE]RIO (DA |DO |DE |DAS |DOS )?/i,"")}
           <small style="color:#8ba3bf">· ${x.convenios_do_cliente} convênio(s)</small></div>
         ${funil}
+        ${lat}
         <div style="font-size:12.5px">${desf}</div>
       </div>`;
     }).join("") : '<div style="color:#8ba3bf">Sem convênios legados com órgão identificado.</div>';

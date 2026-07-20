@@ -463,9 +463,21 @@ def base_rates(request: Request):
             except Exception:  # noqa: BLE001
                 con.rollback()
                 funil = []
-            return {"disponivel": True, "base_rates": _limpar(rows, cols), "funil": funil}
+            # latência de análise (art.97): idem, tolera tabela ausente
+            lcols = ["orgao", "regime", "n", "mediana_dias", "p90_dias",
+                     "pct_acima_limite", "limite_legal", "preditivo", "computado_em"]
+            try:
+                lrows = con.execute(
+                    "SELECT " + ", ".join(lcols) + " FROM latencia_orgao"
+                    " ORDER BY preditivo DESC, mediana_dias DESC NULLS LAST").fetchall()
+                latencia = _limpar(lrows, lcols)
+            except Exception:  # noqa: BLE001
+                con.rollback()
+                latencia = []
+            return {"disponivel": True, "base_rates": _limpar(rows, cols),
+                    "funil": funil, "latencia": latencia}
     except Exception as exc:  # noqa: BLE001
-        return {"disponivel": False, "erro": str(exc), "base_rates": [], "funil": []}
+        return {"disponivel": False, "erro": str(exc), "base_rates": [], "funil": [], "latencia": []}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))

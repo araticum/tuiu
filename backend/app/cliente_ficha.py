@@ -77,6 +77,32 @@ def _risco_orgaos(con, doc: str) -> list[dict]:
         con.rollback()
         fun = {}
 
+    # Latência (art.97): quanto o concedente demora. Mesma preferência de regime
+    # — o número que interessa é o do prazo vigente (novo_pc33).
+    lat: dict[str, dict] = {}
+    try:
+        lrows = con.execute(
+            "SELECT orgao, regime, mediana_dias, p90_dias, pct_acima_limite, limite_legal, preditivo"
+            " FROM latencia_orgao WHERE orgao = ANY(%s)", (orgs,)).fetchall()
+
+        def _rankL(regime: str, pred: bool) -> int:
+            if regime == "novo_pc33" and pred:
+                return 0
+            if pred:
+                return 1
+            return 2 if regime == "novo_pc33" else 3
+
+        for o, regime, med, p90, acima, limite, pred in lrows:
+            cand = {"regime": regime, "preditivo": pred, "mediana_dias": med,
+                    "p90_dias": p90, "limite_legal": limite,
+                    "pct_acima_limite": float(acima) if acima is not None else None}
+            cur = lat.get(o)
+            if cur is None or _rankL(regime, pred) < _rankL(cur["regime"], cur["preditivo"]):
+                lat[o] = cand
+    except Exception:  # noqa: BLE001 — latencia_orgao pode faltar em deploy antigo
+        con.rollback()
+        lat = {}
+
     saida = []
     for o, cnt in sorted(contagem.items(), key=lambda x: -x[1]):
         m, s, res, n, p = br.get(o, (None, None, None, None, False))
@@ -84,7 +110,8 @@ def _risco_orgaos(con, doc: str) -> list[dict]:
                       "pct_morte": float(m) if m is not None else None,
                       "pct_sucesso": float(s) if s is not None else None,
                       "pct_ressalva": float(res) if res is not None else None,
-                      "base_n": n, "preditivo": p, "funil": fun.get(o)})
+                      "base_n": n, "preditivo": p,
+                      "funil": fun.get(o), "latencia": lat.get(o)})
     return saida
 
 
