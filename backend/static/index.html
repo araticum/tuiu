@@ -97,13 +97,15 @@ fetch("/api/cockpit").then(r=>r.json()).then(c=>{
     const quando = m.data_limite ? `<b>${dbr(m.data_limite)}</b>${dias<0?`${-dias}d atrás`:`${dias}d`}` : `<b>AGORA</b>`;
     return `<div class="prio"><span class="dot ${m.farol}"></span>
       <span class="quando">${quando}</span>
-      <span class="d"><b class="ente">${m.ente}</b> — ${m.descricao}
+      <span class="d"><a class="ente" href="/cliente.html?doc=${m.cnpj}">${m.ente}</a> — ${m.descricao}
         <span class="base">${m.base_legal}</span></span></div>`;
   }).join("");
 
   document.getElementById("entes").innerHTML = (c.entes||[]).map(e=>{
     const s=e.saude, mk=e.marcos||{};
     const pills = [];
+    if(mk.acao_imediata) pills.push(`<span class="pill acao"><b>${mk.acao_imediata}</b> ação imediata</span>`);
+    if(mk.vencido) pills.push(`<span class="pill ruim"><b>${mk.vencido}</b> vencido</span>`);
     if(s.impedimentos_pix) pills.push(`<span class="pill acao"><b>${s.impedimentos_pix}</b> Pix impedido</span>`);
     if(s.prestacoes_vencidas) pills.push(`<span class="pill ruim"><b>${s.prestacoes_vencidas}</b> prest. vencida</span>`);
     if(mk.atencao) pills.push(`<span class="pill"><b>${mk.atencao}</b> em 90d</span>`);
@@ -117,7 +119,7 @@ fetch("/api/cockpit").then(r=>r.json()).then(c=>{
       return `<div class="ev">${a.origem==="inbox"?"📩":"🔔"} <b>${a.rotulo}</b> ${t?("· "+String(t).slice(0,50)):""}</div>`;
     }).join("");
     return `<div class="ente">
-      <h3><a href="/carteira.html">${e.rotulo}</a></h3>
+      <h3><a href="/cliente.html?doc=${e.cnpj}">${e.rotulo}</a></h3>
       <div class="sub">${e.municipio||"—"}/${e.uf||"—"} · ${e.cnpj}</div>
       <div class="pills">${pills.join("")}</div>
       ${and?`<div class="andamento">${and}</div>`:``}

@@ -35,6 +35,8 @@
   .acoes button{ padding:3px 8px; font-size:11.5px }
   .vazio{ color:var(--dim); padding:20px 0 }
   .resolvido{ opacity:.45 }
+  .grp{ margin:16px 0 7px; font-size:13px; font-weight:600; border-bottom:1px solid var(--linha); padding-bottom:4px }
+  .grp a{ color:var(--acento) } .grp span{ color:var(--dim); font-weight:400; font-size:11.5px; margin-left:6px }
 </style>
 </head>
 <body>
@@ -47,6 +49,7 @@
   <select id="cliente"><option value="">todos os clientes</option></select>
   <label><input type="checkbox" id="soClientes" checked> só carteira de clientes</label>
   <label><input type="checkbox" id="abertos" checked> só pendentes</label>
+  <label><input type="checkbox" id="agrupar"> agrupar por cliente</label>
 </div>
 <div id="fila">carregando…</div>
 
@@ -82,24 +85,35 @@ function render(){
   }
 
   const el=document.getElementById("fila");
-  if(!(d.itens||[]).length){ el.innerHTML=`<div class="vazio">Nada pendente. 🎉</div>`; return; }
-  el.innerHTML = d.itens.map(i=>{
-    const quando = i.prazo
-      ? `<b>${dbr(i.prazo)}</b>${i.dias<0?`${-i.dias}d atrás`:`em ${i.dias}d`}`
-      : `<b>AGORA</b>sem prazo`;
-    return `<div class="item ${i.status==='resolvido'?'resolvido':''}">
-      <span class="dot ${i.urgencia}"></span>
-      <span class="quando">${quando}</span>
-      <span class="corpo">
-        <a class="cli" href="/cliente.html?doc=${i.cliente}">${i.cliente_nome}</a> — ${i.descricao}
-        <div class="passo">${i.proximo_passo}</div>
-        <div class="base">${i.base_legal||""} ${i.referencia?`· ${i.referencia}`:""} ${i.status!=='aberto'?`· <b>${i.status}</b>`:""}</div>
-      </span>
-      <span class="acoes">
-        <button onclick="triar('${i.chave}','em_andamento')">tratando</button>
-        <button onclick="triar('${i.chave}','resolvido')">resolvido</button>
-      </span></div>`;
-  }).join("");
+  const its=d.itens||[];
+  if(!its.length){ el.innerHTML=`<div class="vazio">Nada pendente. 🎉</div>`; return; }
+  if(document.getElementById("agrupar").checked){
+    const grupos={};
+    its.forEach(i=>{ (grupos[i.cliente_nome]=grupos[i.cliente_nome]||{doc:i.cliente,itens:[]}).itens.push(i); });
+    el.innerHTML = Object.entries(grupos).map(([nome,g])=>
+      `<div class="grp"><a href="/cliente.html?doc=${g.doc}">${nome}</a><span>${g.itens.length} item(ns)</span></div>`
+      + g.itens.map(itemHtml).join("")).join("");
+  } else {
+    el.innerHTML = its.map(itemHtml).join("");
+  }
+}
+
+function itemHtml(i){
+  const quando = i.prazo
+    ? `<b>${dbr(i.prazo)}</b>${i.dias<0?`${-i.dias}d atrás`:`em ${i.dias}d`}`
+    : `<b>AGORA</b>sem prazo`;
+  return `<div class="item ${i.status==='resolvido'?'resolvido':''}">
+    <span class="dot ${i.urgencia}"></span>
+    <span class="quando">${quando}</span>
+    <span class="corpo">
+      <a class="cli" href="/cliente.html?doc=${i.cliente}">${i.cliente_nome}</a> — ${i.descricao}
+      <div class="passo">${i.proximo_passo}</div>
+      <div class="base">${i.base_legal||""} ${i.referencia?`· ${i.referencia}`:""} ${i.status!=='aberto'?`· <b>${i.status}</b>`:""}</div>
+    </span>
+    <span class="acoes">
+      <button onclick="triar('${i.chave}','em_andamento')">tratando</button>
+      <button onclick="triar('${i.chave}','resolvido')">resolvido</button>
+    </span></div>`;
 }
 
 function triar(chave, status){
@@ -109,6 +123,7 @@ function triar(chave, status){
 }
 
 ["cliente","soClientes","abertos"].forEach(id=>document.getElementById(id).onchange=carregar);
+document.getElementById("agrupar").onchange=render;
 carregar();
 </script>
 <script src="/nav.js" defer></script>

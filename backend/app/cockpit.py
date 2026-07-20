@@ -50,12 +50,16 @@ def montar() -> dict:
     entes_out = []
     marcos, eventos, prioridades, totais = {}, {}, [], {}
 
+    nomes: dict[str, str] = {}
     if conectar is not None:
         try:
             with conectar() as con:
                 marcos = _marcos_por_ente(con)
                 eventos = _eventos_por_ente(con)
                 prioridades = _prioridades(con)
+                # nome do cliente p/ os cards não ficarem intitulados por CNPJ
+                nomes = {r[0]: (r[1] or r[2]) for r in con.execute(
+                    "SELECT doc, apelido, nome FROM clientes WHERE ativo")}
                 v = con.execute(
                     "SELECT count(*) FILTER (WHERE farol='acao_imediata'),"
                     "       count(*) FILTER (WHERE farol='vencido'),"
@@ -71,7 +75,7 @@ def montar() -> dict:
         p, esp, em, lg = e.get("parcerias", {}), e.get("especiais", {}), e.get("emendas_indicadas", {}), e.get("legado", {})
         prest_vencidas = sum(1 for x in lg.get("prestacoes", []) if x.get("farol") == "vencido")
         entes_out.append({
-            "cnpj": cnpj, "rotulo": e.get("rotulo") or e.get("nome"),
+            "cnpj": cnpj, "rotulo": nomes.get(cnpj) or e.get("rotulo") or e.get("nome") or cnpj,
             "municipio": e.get("municipio"), "uf": e.get("uf"),
             "saude": {
                 "instrumentos_ativos": lg.get("ativos", 0),
