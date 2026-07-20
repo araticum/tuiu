@@ -277,6 +277,16 @@ def test_login_invalido_recusado(login):
     assert not ok
 
 
+def test_login_email_aceito():
+    """Login em formato e-mail é aceito (o dono entra por e-mail no túnel) —
+    valida a regex E a CHECK do banco (o INSERT passa pelo constraint 0017).
+    Login com prefixo pytest_ para o fixture _limpo() faxinar depois."""
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, msg, senha = auth.criar_operador("pytest_chefe", SENHA, "pytest_dono@araticum.net", "Dono")
+    assert ok, msg
+    assert auth.autenticar("pytest_dono@araticum.net", senha, ip="1.1.1.1")[0], "entra pelo e-mail"
+
+
 def test_login_maiusculo_e_normalizado_nao_recusado():
     """Login não é sensível a caixa: "Fulano" vira "fulano". Assim "FULANO"
     depois colide como repetido, em vez de criar uma segunda conta."""

@@ -204,13 +204,14 @@ def ha_usuario() -> bool:
         return False
 
 
-LOGIN_VALIDO = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
+# Aceita usuário simples E e-mail (o '@'); casa com a CHECK do banco (0017).
+LOGIN_VALIDO = re.compile(r"^[a-z0-9][a-z0-9._@-]{2,31}$")
 
 
 def _valida_login(login: str) -> tuple[bool, str]:
     login = (login or "").strip().lower()
     if not LOGIN_VALIDO.match(login):
-        return False, "login: 3 a 32 caracteres, minúsculo, começando por letra ou número"
+        return False, "login: 3 a 32 caracteres, minúsculo (usuário ou e-mail), começando por letra ou número"
     return True, login
 
 
