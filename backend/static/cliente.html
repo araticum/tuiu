@@ -31,6 +31,16 @@
           padding:6px 13px; font-size:13px; cursor:pointer; margin-top:7px } button:hover{border-color:var(--acento)}
   .linha2{ display:flex; gap:7px } .linha2 input{ flex:1 }
   .impedido{ color:var(--ruim); font-weight:600 } .limpo{ color:var(--ok) }
+  .tl{ position:relative }
+  .tlit{ position:relative; padding:0 0 13px 20px; border-left:2px solid var(--linha) }
+  .tlit:last-child{ border-left-color:transparent; padding-bottom:0 }
+  .tldot{ position:absolute; left:-6px; top:2px; width:10px; height:10px; border-radius:50%; border:2px solid var(--card) }
+  .tldot.processo{ background:#6b8cae } .tldot.sistema{ background:var(--acento) } .tldot.atendimento{ background:var(--ok) } .tldot.orgao{ background:var(--acao) }
+  .tlh{ font-size:13px } .tlh b{ color:var(--tx) }
+  .tlt{ color:var(--dim); font-size:11px; margin-left:6px }
+  .tls{ color:var(--dim); font-size:12.5px; margin-top:2px }
+  .tlleg{ display:flex; gap:12px; font-size:11px; color:var(--dim); margin:0 0 9px 2px }
+  .tlleg i{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; vertical-align:middle }
 </style>
 </head>
 <body>
@@ -47,8 +57,9 @@
     <div class="sec">Prazos abertos</div>
     <div class="box" id="prazos"></div>
 
-    <div class="sec">Andamento recente</div>
-    <div class="box" id="andamento"></div>
+    <div class="sec">Trilha <small style="color:#8ba3bf;font-weight:400">— história relacional do cliente</small></div>
+    <div class="tlleg"><span><i style="background:#6b8cae"></i>processo</span><span><i style="background:#4da3ff"></i>sistema</span><span><i style="background:#2fbf71"></i>atendimento</span><span><i style="background:#ff7a59"></i>órgão</span></div>
+    <div class="box" id="trilha"><div class="meta">carregando…</div></div>
 
     <div class="sec">Odds por órgão <small style="color:#8ba3bf;font-weight:400">— funil (regra vigente) + desfecho (histórico)</small></div>
     <div class="box" id="risco"></div>
@@ -143,10 +154,7 @@ function carregar(){
       </div>`;
     }).join("") : '<div style="color:#8ba3bf">Sem convênios legados com órgão identificado.</div>';
 
-    document.getElementById("andamento").innerHTML = (f.andamento||[]).slice(0,10).map(a=>`
-      <div class="li">${a.origem==="inbox"?"📩":"🔔"} ${a.rotulo}
-        <div class="meta">${a.de?`${a.de} → ${a.para}`:(a.para||"")} · ${a.snapshot}</div></div>`).join("")
-      || `<div class="meta">sem mudanças registradas</div>`;
+    carregarTrilha();
 
     const reg=f.regularidade||{};
     let rh = reg.fontes
@@ -187,6 +195,19 @@ function addPessoa(){
   fetch(`/api/cliente/${doc}/pessoa`, {method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({nome, cpf, papel:document.getElementById("pPapel").value.trim()})})
     .then(r=>r.json()).then(x=>{ if(!x.ok) alert(x.erro); carregar(); });
+}
+function carregarTrilha(){
+  fetch(`/api/cliente/${doc}/trilha`).then(r=>r.json()).then(t=>{
+    const el=document.getElementById("trilha");
+    const its=(t.itens)||[];
+    if(!its.length){ el.innerHTML=`<div class="meta">sem histórico ainda</div>`; return; }
+    el.innerHTML = `<div class="tl">`+its.map(i=>`
+      <div class="tlit"><span class="tldot ${i.grupo||''}"></span>
+        <div class="tlh">${i.icone||""} <b>${i.titulo||""}</b><span class="tlt">${dth(i.ts)}</span></div>
+        ${i.sub?`<div class="tls">${i.sub}</div>`:""}
+        ${i.autor?`<div class="tlt" style="margin-left:0">— ${i.autor}</div>`:""}
+      </div>`).join("")+`</div>`;
+  });
 }
 carregar();
 </script>

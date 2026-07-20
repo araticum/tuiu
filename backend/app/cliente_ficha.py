@@ -9,8 +9,9 @@ atendimento.
 from __future__ import annotations
 
 import csv
+import gzip
 import json
-from datetime import date
+from datetime import date, datetime
 
 from app.carteira import ROTULOS, listar_entes, snapshot_mais_recente
 from app.db import conectar
@@ -159,6 +160,120 @@ def _diario(con, doc: str) -> list[dict]:
     return [dict(zip(cols, r)) for r in con.execute(
         "SELECT id, quando, autor, tipo, texto, referencia FROM diario_cliente"
         " WHERE doc_cliente=%s ORDER BY quando DESC LIMIT 100", (doc,))]
+
+
+def _pareceres(doc: str) -> list[dict]:
+    """Pareceres do órgão sobre as propostas do cliente (o lado relacional da
+    trilha: o que o CONCEDENTE decidiu, e quando). Do recorte g2."""
+    snap = snapshot_mais_recente()
+    if snap is None:
+        return []
+    arq = snap / doc / "parcerias" / "analise-proposta.jsonl.gz"
+    if not arq.exists():
+        return []
+    out = []
+    with gzip.open(arq, "rt", encoding="utf-8") as fh:
+        for linha in fh:
+            linha = linha.strip()
+            if not linha:
+                continue
+            a = json.loads(linha)
+            ts = str(a.get("dh_analise_proposta") or "")
+            if not ts:
+                continue
+            out.append({"ts": ts, "id_proposta": a.get("id_proposta"),
+                        "resultado": (a.get("in_resultado_analise") or "").strip(),
+                        "fase": (a.get("in_fase_analise") or "").strip(),
+                        "parecer": (a.get("ds_parecer") or "").strip()})
+    return out
+
+
+_SIT_LEGIVEL = {
+    "PROPOSTA_CADASTRADA": "Proposta cadastrada",
+    "PROPOSTA_ENVIADA_ANALISE": "Proposta enviada para análise",
+    "PROPOSTA_EM_ANALISE": "Proposta em análise",
+    "PROPOSTA_EM_COMPLEMENTACAO": "Proposta em complementação",
+    "PROPOSTA_COMPLEMENTADA_ENVIADA_ANALISE": "Complementação enviada para análise",
+    "PROPOSTA_APROVADA": "Proposta aprovada",
+    "PROPOSTA_REPROVADA": "Proposta reprovada",
+    "PLANO_TRABALHO_APROVADO": "Plano de trabalho aprovado",
+    "PLANO_TRABALHO_EM_ANALISE": "Plano de trabalho em análise",
+    "ASSINADA": "Convênio assinado",
+    "EM_EXECUCAO": "Em execução",
+    "PRESTACAO_CONTAS_ENVIADA_ANALISE": "Prestação enviada para análise",
+    "PRESTACAO_CONTAS_EM_ANALISE": "Prestação em análise",
+    "PRESTACAO_CONTAS_APROVADA": "Prestação aprovada",
+    "PRESTACAO_CONTAS_APROVADA_COM_RESSALVAS": "Prestação aprovada com ressalvas",
+    "AGUARDANDO_PRESTACAO_CONTAS": "Aguardando prestação de contas",
+    "CONVENIO_ANULADO": "Convênio anulado",
+}
+
+
+def _humaniza(sit: str) -> str:
+    return _SIT_LEGIVEL.get(sit) or (sit or "").replace("_", " ").capitalize()
+
+
+def _historico_legado(doc: str) -> list[dict]:
+    """O trilho de verdade: cada transição de situação dos convênios/propostas do
+    cliente, com data. Existe para todo cliente com histórico legado — é o que
+    enche a trilha antes de os eventos D-1 e o diário começarem a acumular."""
+    snap = snapshot_mais_recente()
+    if snap is None:
+        return []
+    arq = snap / doc / "legado" / "historico_situacao.csv"
+    if not arq.exists():
+        return []
+    out = []
+    with open(arq, encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh, delimiter=";"):
+            bruto = (row.get("DIA_HISTORICO_SIT") or "").strip()
+            dt = None
+            for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y"):
+                try:
+                    dt = datetime.strptime(bruto, fmt)
+                    break
+                except ValueError:
+                    continue
+            if dt is None:
+                continue
+            out.append({"ts": dt.isoformat(), "sit": (row.get("HISTORICO_SIT") or "").strip(),
+                        "nr": (row.get("NR_CONVENIO") or "").strip()})
+    return out
+
+
+def trilha(doc: str) -> dict:
+    """Uma linha do tempo única, do mais novo pro mais antigo, cruzando: o PROCESSO
+    (transições de situação dos convênios do cliente), o que o SISTEMA detectou
+    (diff D-1), o que a CASA fez (diário) e o que o ÓRGÃO decidiu (pareceres).
+    É a história relacional do cliente num lugar só."""
+    doc = "".join(c for c in doc if c.isdigit())
+    itens: list[dict] = []
+    for h in _historico_legado(doc):
+        itens.append({"ts": h["ts"], "grupo": "processo", "icone": "📋",
+                      "titulo": _humaniza(h["sit"]),
+                      "sub": (f"instrumento {h['nr']}" if h["nr"] else ""), "tipo": "historico"})
+    with conectar() as con:
+        for rotulo, tipo, de, para, origem, snap, criado in con.execute(
+            "SELECT rotulo, tipo, de, para, origem, snapshot::text, criado_em FROM eventos"
+            " WHERE cnpj=%s ORDER BY criado_em DESC LIMIT 60", (doc,)):
+            itens.append({"ts": criado.isoformat(), "grupo": "sistema",
+                          "icone": "📩" if origem == "inbox" else "🔔", "titulo": rotulo,
+                          "sub": (f"{de} → {para}" if de else (para or "")), "tipo": tipo})
+        for quando, autor, tipo, texto in con.execute(
+            "SELECT quando, autor, tipo, texto FROM diario_cliente"
+            " WHERE doc_cliente=%s ORDER BY quando DESC LIMIT 60", (doc,)):
+            itens.append({"ts": quando.isoformat(), "grupo": "atendimento", "icone": "✎",
+                          "titulo": tipo, "sub": texto, "autor": autor, "tipo": tipo})
+    for p in _pareceres(doc):
+        sub = p["resultado"] or "análise"
+        if p["fase"]:
+            sub += f" · {p['fase']}"
+        if p["parecer"]:
+            sub += f" — {p['parecer'][:180]}"
+        itens.append({"ts": p["ts"], "grupo": "orgao", "icone": "⚖",
+                      "titulo": f"Parecer — Proposta {p['id_proposta']}", "sub": sub, "tipo": "parecer"})
+    itens.sort(key=lambda x: (x["ts"] or "").replace(" ", "T"), reverse=True)
+    return {"itens": itens[:45]}
 
 
 def _triagens(con, doc: str) -> list[dict]:

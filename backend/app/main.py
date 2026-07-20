@@ -234,6 +234,15 @@ def cliente_ficha(doc: str):
         return {"disponivel": False, "erro": str(exc)}
 
 
+@app.get("/api/cliente/{doc}/trilha")
+def cliente_trilha(doc: str):
+    try:
+        from app.cliente_ficha import trilha
+        return {"disponivel": True, **trilha(doc)}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "itens": []}
+
+
 @app.post("/api/cliente/{doc}/diario")
 def cliente_anotar(doc: str, payload: dict):
     from app.cliente_ficha import anotar
