@@ -29,6 +29,7 @@ DB = RAIZ_LAKE / "lake.duckdb"
 SICONV_CSV = RAIZ_LAKE / "detru" / "siconv"
 G2_PARCERIAS = RAIZ_LAKE / "g2" / "parcerias"
 G2_ESPECIAIS = RAIZ_LAKE / "g2" / "especiais"
+EXTERNOS = RAIZ_LAKE / "externos"
 
 
 def _duck():
@@ -51,7 +52,7 @@ def _nome_tabela(caminho: Path, prefixo: str = "") -> str:
 def construir() -> dict:
     duckdb = _duck()
     con = duckdb.connect(str(DB))
-    feito = {"siconv": 0, "g2_parcerias": 0, "g2_especiais": 0}
+    feito = {"siconv": 0, "g2_parcerias": 0, "g2_especiais": 0, "externos": 0}
 
     # SICONV: CSV com ; e UTF-8-BOM. read_csv_auto acerta o resto; all_varchar
     # evita adivinhação de tipo errada em coluna que mistura vazio e número.
@@ -78,6 +79,24 @@ def construir() -> dict:
                 f'CREATE OR REPLACE VIEW "{nome}" AS '
                 f"SELECT * FROM read_json_auto('{arq}', ignore_errors=true)")
             feito[chave] += 1
+
+    # Externos (fundação de BI além do Transfergov). Cada fonte vira uma view.
+    feito["externos"] = 0
+    # Mapa das OSC: microdados de todas as OSCs do país (CSV ;-delimitado).
+    for csv in (EXTERNOS / "mapaosc").glob("*MOSC*.csv") if (EXTERNOS / "mapaosc").exists() else []:
+        con.execute(
+            'CREATE OR REPLACE VIEW "mapa_osc" AS '
+            f"SELECT * FROM read_csv_auto('{csv}', delim=';', header=true, "
+            f"all_varchar=true, ignore_errors=true)")
+        feito["externos"] += 1
+    # Emendas parlamentares: um jsonl por ano → uma view unificada.
+    emendas = sorted((EXTERNOS / "emendas").glob("emendas-*.jsonl.gz")) if (EXTERNOS / "emendas").exists() else []
+    if emendas:
+        glob = str(EXTERNOS / "emendas" / "emendas-*.jsonl.gz")
+        con.execute(
+            'CREATE OR REPLACE VIEW "emendas" AS '
+            f"SELECT * FROM read_json_auto('{glob}', ignore_errors=true, union_by_name=true)")
+        feito["externos"] += 1
 
     con.close()
     return feito
