@@ -22,8 +22,14 @@
   th { color:var(--dim); font-weight:500; }
   td.num { text-align:right; font-variant-numeric:tabular-nums; }
   .barra-morte { display:inline-block; height:9px; background:var(--perigo); border-radius:2px; vertical-align:middle; }
+  .barra-aprov { display:inline-block; height:9px; background:var(--ok); border-radius:2px; vertical-align:middle; }
   .morte-alta { color:var(--perigo); font-weight:600; }
   .morte-baixa { color:var(--ok); }
+  .aprov-alta { color:var(--ok); font-weight:600; }
+  .aprov-baixa { color:var(--perigo); font-weight:600; }
+  .bloco { border:1px solid var(--linha); border-radius:11px; padding:2px 16px 14px; margin-bottom:22px; background:#0e141d; }
+  .bloco > .titulo { font-size:15px; margin:14px 0 2px; color:var(--tx); }
+  .bloco > .titulo small { color:var(--dim); font-weight:400; font-size:12.5px; }
   .chip-reg { font-size:10.5px; padding:1px 7px; border-radius:999px; border:1px solid var(--linha); color:var(--dim); }
   .contexto { opacity:.5; }
   .vazio { color:var(--dim); padding:20px 0; }
@@ -31,24 +37,84 @@
 </head>
 <body>
 <header>
-  <h1>Tuiú · Inteligência <small>base rates de desfecho por órgão</small></h1>
+  <h1>Tuiú · Inteligência <small>odds por órgão, de ponta a ponta</small></h1>
   <a href="/">← Cockpit</a> · <a href="/fila.html">Fila</a> · <a href="/normas.html">Normas</a> · <a href="/conta.html">Conta ▸</a>
 </header>
 <div class="porque">
-  18 anos de SICONV destilados em <b>probabilidade de desfecho</b>. Ninguém no nicho
-  mostra que um convênio de OSC no <b>Ministério das Cidades</b> morre (anula/cancela/rejeita)
-  numa taxa muito maior que num de <b>Saúde</b> — dado que só existe olhando como as histórias terminaram.
+  18 anos de SICONV destilados em <b>probabilidade</b>, nas duas pontas da jornada:
+  <b>antes de protocolar</b> — a que órgão a proposta de OSC aprova (ex.: ~92% de reprovação
+  na Agric. Familiar contra ~36% no Esporte) — e <b>depois de celebrar</b>, quanto o convênio
+  morre. Ninguém no nicho mostra a odds antes de escrever a primeira linha do plano de trabalho.
 </div>
 <div class="regime-nota" id="regimenota">
-  ⚠️ <b>A base rate é datada.</b> A regra muda a cada trimestre, e desfecho sob regra revogada não prevê
-  o de hoje. Os finais existem quase só no <b>regime legado (PI 424)</b> — o ciclo novo (PC 33) é jovem
-  demais. Por isso o preditivo vem do legado, e o <b>contexto</b> (ciclo novo, esmaecido) fica à parte.
+  ⚠️ <b>Tudo é datado — a regra muda a cada trimestre.</b> Mas as duas pontas envelhecem diferente:
+  o <b>funil</b> (aprovação de proposta) é decidido em meses, então o ciclo novo (<b>PC 33</b>) já é
+  preditivo — é a odds sob a <b>regra de hoje</b>. Já o <b>desfecho</b> (morte do convênio) leva anos:
+  os finais existem quase só no <b>legado (PI 424)</b>, e o ciclo novo aí é só contexto.
 </div>
 
 <div id="conteudo"><div class="vazio">carregando…</div></div>
 
 <script>
-const ORGAO = o => (o || "").replace(/^MINIST[ÉE]RIO (DA |DO |DE |DAS |DOS )?/i, "").replace(/^SECRETARIA.*/i, m => m).trim();
+const ORGAO = o => (o || "").replace(/^MINIST[ÉE]RIO (DA |DO |DE |DAS |DOS )?/i, "").replace(/^SECRETARIA ESPECIAL/i, "Sec.").replace(/^SEC\.ESPEC\./i, "Sec.").trim();
+const N = x => (+x || 0).toLocaleString('pt-BR');
+
+// ---- FUNIL (upstream): aprovação de proposta por órgão ----
+function blocoFunil(funil) {
+  if (!funil || !funil.length) return "";
+  const novo   = funil.filter(f => f.regime === 'novo_pc33'   && f.preditivo);
+  const legado = funil.filter(f => f.regime === 'legado_pi424' && f.preditivo);
+  const ctx    = funil.filter(f => !f.preditivo);
+  const cab = `<tr><th>órgão</th><th class="num">propostas resolvidas</th>
+    <th class="num">taxa de APROVAÇÃO</th><th class="num">reprova</th></tr>`;
+  const maxRep = Math.max(1, ...funil.map(f => +f.pct_reprovada || 0));
+  const linha = (f, contexto) => {
+    const a = +f.pct_aprovada;
+    return `<tr class="${contexto ? 'contexto' : ''}">
+      <td>${ORGAO(f.orgao)}</td>
+      <td class="num">${N(f.n_resolvidas)}<span style="color:var(--dim)"> / ${N(f.n_total)}</span></td>
+      <td class="num ${a>=55?'aprov-alta':(a<25?'aprov-baixa':'')}">${f.pct_aprovada ?? '—'}%
+        <span class="barra-aprov" style="width:${Math.round(60*(a||0)/100)}px"></span></td>
+      <td class="num" style="color:var(--dim)">${f.pct_reprovada ?? '—'}%</td>
+    </tr>`;
+  };
+  const tabela = (rows, contexto) => `<table>${cab}${rows.map(f => linha(f, contexto)).join("")}</table>`;
+  return `<div class="bloco">
+    <div class="titulo">① Antes de protocolar — funil de aprovação da proposta
+      <small>de cada proposta de OSC ao órgão, quantas passam a convênio</small></div>` +
+    (novo.length ? `<div class="sec">Sob a regra vigente — PC 33 (${novo.length} órgãos, preditivo)</div>${tabela(novo, false)}` : "") +
+    (legado.length ? `<div class="sec">Histórico — PI 424 (contexto de longo prazo)</div>${tabela(legado, true)}` : "") +
+    (ctx.length ? `<div class="sec">Amostra pequena (não use para decidir)</div>${tabela(ctx, true)}` : "") +
+    `</div>`;
+}
+
+// ---- DESFECHO (downstream): morte do convênio já celebrado ----
+function blocoDesfecho(base) {
+  const pred = base.filter(b => b.preditivo);
+  const ctx  = base.filter(b => !b.preditivo);
+  const maxMorte = Math.max(1, ...pred.map(b => +b.pct_morte || 0));
+  const linha = (b, contexto) => `
+    <tr class="${contexto ? 'contexto' : ''}">
+      <td>${ORGAO(b.orgao)}</td>
+      <td><span class="chip-reg">${b.regime === 'legado_pi424' ? 'PI 424' : 'PC 33 (novo)'}</span></td>
+      <td class="num">${N(b.n)}</td>
+      <td class="num ${(+b.pct_morte>=15)?'morte-alta':(+b.pct_morte<5?'morte-baixa':'')}">${b.pct_morte ?? '—'}%
+        <span class="barra-morte" style="width:${Math.round(60*(+b.pct_morte||0)/maxMorte)}px"></span></td>
+      <td class="num">${b.pct_sucesso ?? '—'}%</td>
+      <td class="num">${b.pct_ressalva ?? '—'}%</td>
+      <td class="num">${N(b.prestacoes_paradas)}${b.mediana_dias_parada!=null?` <span style="color:var(--dim)">(${b.mediana_dias_parada}d)</span>`:''}</td>
+    </tr>`;
+  const cab = `<tr><th>órgão</th><th>regime</th><th class="num">convênios</th>
+    <th class="num">taxa de MORTE</th><th class="num">sucesso</th><th class="num">c/ ressalva</th>
+    <th class="num">prest. paradas (med)</th></tr>`;
+  return `<div class="bloco">
+    <div class="titulo">② Depois de celebrar — desfecho do convênio
+      <small>dos que viraram convênio, quantos morrem (anula/cancela/rejeita/TCE)</small></div>
+    <div class="sec">Preditivo — regime legado, com finais (${pred.length} órgãos)</div>
+    <table>${cab}${pred.map(b => linha(b, false)).join("")}</table>` +
+    (ctx.length ? `<div class="sec">Contexto — ciclo novo, sem finais suficientes</div>
+       <table>${cab}${ctx.map(b => linha(b, true)).join("")}</table>` : "") + `</div>`;
+}
 
 async function carregar() {
   const r = await fetch("/api/base-rates");
@@ -56,36 +122,14 @@ async function carregar() {
       '<div class="vazio">Só operador acessa a inteligência da carteira nacional.</div>'; return; }
   const d = await r.json();
   const alvo = document.getElementById("conteudo");
-  if (!d.disponivel) { alvo.innerHTML = `<div class="vazio">Sem dados: <code>${d.erro||"—"}</code>. Rode <code>ingest/lake/base_rates.py</code>.</div>`; return; }
+  if (!d.disponivel) { alvo.innerHTML = `<div class="vazio">Sem dados: <code>${d.erro||"—"}</code>. Rode <code>ingest/lake/base_rates.py</code> e <code>funil.py</code>.</div>`; return; }
 
-  const pred = d.base_rates.filter(b => b.preditivo);
-  const ctx  = d.base_rates.filter(b => !b.preditivo);
-  const maxMorte = Math.max(1, ...pred.map(b => +b.pct_morte || 0));
-
-  const linha = (b, contexto) => `
-    <tr class="${contexto ? 'contexto' : ''}">
-      <td>${ORGAO(b.orgao)}</td>
-      <td><span class="chip-reg">${b.regime === 'legado_pi424' ? 'PI 424' : 'PC 33 (novo)'}</span></td>
-      <td class="num">${(+b.n).toLocaleString('pt-BR')}</td>
-      <td class="num ${(+b.pct_morte>=15)?'morte-alta':(+b.pct_morte<5?'morte-baixa':'')}">${b.pct_morte ?? '—'}%
-        <span class="barra-morte" style="width:${Math.round(60*(+b.pct_morte||0)/maxMorte)}px"></span></td>
-      <td class="num">${b.pct_sucesso ?? '—'}%</td>
-      <td class="num">${b.pct_ressalva ?? '—'}%</td>
-      <td class="num">${(+b.prestacoes_paradas||0).toLocaleString('pt-BR')}${b.mediana_dias_parada!=null?` <span style="color:var(--dim)">(${b.mediana_dias_parada}d)</span>`:''}</td>
-    </tr>`;
-
-  const cab = `<tr><th>órgão</th><th>regime</th><th class="num">convênios</th>
-    <th class="num">taxa de MORTE</th><th class="num">sucesso</th><th class="num">c/ ressalva</th>
-    <th class="num">prest. paradas (med)</th></tr>`;
-
+  const carimbo = d.funil?.[0]?.computado_em || d.base_rates?.[0]?.computado_em || "";
   alvo.innerHTML =
-    `<div class="sec">Preditivo — regime legado, com finais (${pred.length} órgãos)</div>` +
-    `<table>${cab}${pred.map(b => linha(b, false)).join("")}</table>` +
-    (ctx.length ? `<div class="sec">Contexto — ciclo novo, sem finais suficientes (não use para prever)</div>
-       <table>${cab}${ctx.map(b => linha(b, true)).join("")}</table>` : "") +
-    `<div class="porque" style="margin-top:16px">Fonte: ${d.base_rates[0]?.fonte || 'SICONV'} ·
-       computado ${(d.base_rates[0]?.computado_em||'').replace('T',' ').slice(0,16)}.
-       "Morte" = anulado/cancelado/rejeitado/inadimplente/TCE.</div>`;
+    blocoFunil(d.funil) +
+    blocoDesfecho(d.base_rates) +
+    `<div class="porque">Fonte: SICONV (detru) · computado ${carimbo.replace('T',' ').slice(0,16)}.
+       Funil só de OSC; "morte" = anulado/cancelado/rejeitado/inadimplente/TCE.</div>`;
 }
 carregar();
 </script>

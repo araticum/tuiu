@@ -43,11 +43,40 @@ def _risco_orgaos(con, doc: str) -> list[dict]:
                 contagem[o] = contagem.get(o, 0) + 1
     if not contagem:
         return []
+    orgs = list(contagem)
     rows = con.execute(
         "SELECT orgao, pct_morte, pct_sucesso, pct_ressalva, n, preditivo"
         " FROM base_rates_orgao WHERE regime='legado_pi424' AND orgao = ANY(%s)",
-        (list(contagem),)).fetchall()
+        (orgs,)).fetchall()
     br = {o: (m, s, res, n, p) for o, m, s, res, n, p in rows}
+
+    # Funil (upstream): a odds de a proposta APROVAR, preferindo a regra vigente
+    # (novo_pc33 preditivo) e caindo para o legado quando o novo é raso. Um
+    # cliente decide a PRÓXIMA proposta pela regra de hoje — daí a preferência.
+    fun: dict[str, dict] = {}
+    try:
+        frows = con.execute(
+            "SELECT orgao, regime, pct_aprovada, pct_reprovada, n_resolvidas, preditivo"
+            " FROM funil_orgao WHERE orgao = ANY(%s)", (orgs,)).fetchall()
+
+        def _rank(regime: str, pred: bool) -> int:
+            if regime == "novo_pc33" and pred:
+                return 0
+            if pred:
+                return 1
+            return 2 if regime == "novo_pc33" else 3
+
+        for o, regime, apr, rep, nres, pred in frows:
+            cand = {"regime": regime, "preditivo": pred, "n_resolvidas": nres,
+                    "pct_aprovada": float(apr) if apr is not None else None,
+                    "pct_reprovada": float(rep) if rep is not None else None}
+            cur = fun.get(o)
+            if cur is None or _rank(regime, pred) < _rank(cur["regime"], cur["preditivo"]):
+                fun[o] = cand
+    except Exception:  # noqa: BLE001 — funil_orgao pode faltar em deploy antigo
+        con.rollback()
+        fun = {}
+
     saida = []
     for o, cnt in sorted(contagem.items(), key=lambda x: -x[1]):
         m, s, res, n, p = br.get(o, (None, None, None, None, False))
@@ -55,7 +84,7 @@ def _risco_orgaos(con, doc: str) -> list[dict]:
                       "pct_morte": float(m) if m is not None else None,
                       "pct_sucesso": float(s) if s is not None else None,
                       "pct_ressalva": float(res) if res is not None else None,
-                      "base_n": n, "preditivo": p})
+                      "base_n": n, "preditivo": p, "funil": fun.get(o)})
     return saida
 
 

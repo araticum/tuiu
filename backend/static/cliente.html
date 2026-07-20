@@ -51,7 +51,7 @@
     <div class="sec">Andamento recente</div>
     <div class="box" id="andamento"></div>
 
-    <div class="sec">Risco por órgão <small style="color:#8ba3bf;font-weight:400">— base rate histórica (regime legado)</small></div>
+    <div class="sec">Odds por órgão <small style="color:#8ba3bf;font-weight:400">— funil (regra vigente) + desfecho (histórico)</small></div>
     <div class="box" id="risco"></div>
   </div>
 
@@ -110,12 +110,22 @@ function carregar(){
     document.getElementById("risco").innerHTML = ro.length ? ro.map(x=>{
       const m = x.pct_morte;
       const cor = m==null ? "#8ba3bf" : (m>=15 ? "#ff6b6b" : (m<5 ? "#2fbf71" : "#e8b93c"));
-      const taxa = m==null ? "sem base rate" :
-        `<b style="color:${cor}">${m}% morte</b> · ${x.pct_sucesso}% sucesso`;
-      return `<div style="padding:5px 0;border-bottom:1px solid #1e2a3a">
+      const desf = m==null ? '<span style="color:#8ba3bf">desfecho: sem base rate</span>' :
+        `desfecho: <b style="color:${cor}">${m}% morte</b> · ${x.pct_sucesso}% sucesso${x.preditivo?"":' <span style="color:#8ba3bf">(amostra pequena)</span>'}`;
+      const fu = x.funil;
+      let funil = "";
+      if (fu && fu.pct_aprovada!=null){
+        const a = fu.pct_aprovada;
+        const fc = a>=55 ? "#2fbf71" : (a<25 ? "#ff6b6b" : "#e8b93c");
+        const reg = fu.regime==="novo_pc33" ? "regra vigente" : "histórico";
+        funil = `<div style="font-size:12.5px">funil: <b style="color:${fc}">${a}% aprova</b>
+          <span style="color:#8ba3bf">· ${reg}${fu.preditivo?"":" (amostra pequena)"}</span></div>`;
+      }
+      return `<div style="padding:6px 0;border-bottom:1px solid #1e2a3a">
         <div>${(x.orgao||"").replace(/^MINIST[ÉE]RIO (DA |DO |DE |DAS |DOS )?/i,"")}
           <small style="color:#8ba3bf">· ${x.convenios_do_cliente} convênio(s)</small></div>
-        <div style="font-size:12.5px">${taxa}${x.preditivo?"":' <span style="color:#8ba3bf">(amostra pequena)</span>'}</div>
+        ${funil}
+        <div style="font-size:12.5px">${desf}</div>
       </div>`;
     }).join("") : '<div style="color:#8ba3bf">Sem convênios legados com órgão identificado.</div>';
 

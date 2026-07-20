@@ -440,6 +440,10 @@ def base_rates(request: Request):
     inteira do país, não um cliente)."""
     if request.state.usuario.get("papel") != "operador":
         raise HTTPException(403, "fora do seu acesso")
+
+    def _limpar(rows, cols):
+        return [dict(zip(cols, [str(x) if hasattr(x, "isoformat") else x for x in r])) for r in rows]
+
     try:
         with conectar() as con:
             cols = ["orgao", "regime", "n", "pct_sucesso", "pct_ressalva", "pct_morte",
@@ -448,10 +452,20 @@ def base_rates(request: Request):
             rows = con.execute(
                 "SELECT " + ", ".join(cols) + " FROM base_rates_orgao"
                 " ORDER BY preditivo DESC, pct_morte DESC NULLS LAST").fetchall()
-            return {"disponivel": True,
-                    "base_rates": [dict(zip(cols, [str(x) if hasattr(x, 'isoformat') else x for x in r])) for r in rows]}
+            # funil (upstream): a tabela pode ainda não existir num deploy antigo
+            fcols = ["orgao", "regime", "n_total", "n_resolvidas", "pct_aprovada",
+                     "pct_reprovada", "pct_em_curso", "preditivo", "computado_em"]
+            try:
+                frows = con.execute(
+                    "SELECT " + ", ".join(fcols) + " FROM funil_orgao"
+                    " ORDER BY preditivo DESC, pct_reprovada DESC NULLS LAST").fetchall()
+                funil = _limpar(frows, fcols)
+            except Exception:  # noqa: BLE001
+                con.rollback()
+                funil = []
+            return {"disponivel": True, "base_rates": _limpar(rows, cols), "funil": funil}
     except Exception as exc:  # noqa: BLE001
-        return {"disponivel": False, "erro": str(exc), "base_rates": []}
+        return {"disponivel": False, "erro": str(exc), "base_rates": [], "funil": []}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))
