@@ -34,12 +34,8 @@
 </head>
 <body>
 <header>
-  <h1>Tuiú · Carteira <small>detalhe por ente</small></h1>
-  <a class="badge" href="/" style="text-decoration:none">← Cockpit</a>
+  <h1>Carteira <small>detalhe por ente</small></h1>
   <span class="badge" id="snapshot">carregando…</span>
-  <a class="badge" href="/agenda.html" style="text-decoration:none">⏰ Agenda de prazos →</a>
-  <a class="badge" href="/eventos.html" style="text-decoration:none">🔔 Andamento →</a>
-  <a class="badge" href="/notificacoes.html" style="text-decoration:none">Notificações ▸</a>
 </header>
 <div class="grid" id="grid"></div>
 <footer>Dados públicos oficiais (Transferegov g2 + CSVs detru), D-1. Tela provisória da F0 — o shell definitivo entra nas próximas fases.</footer>
@@ -114,5 +110,6 @@ fetch("/api/entes").then(r=>r.json()).then(({snapshot, entes})=>{
   }
 });
 </script>
+<script src="/nav.js" defer></script>
 </body>
 </html>

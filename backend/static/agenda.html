@@ -28,8 +28,7 @@
 </head>
 <body>
 <header>
-  <h1>Tuiú · Agenda de prazos <small>F1 — motor de regras</small></h1>
-  <a href="/">← Carteira</a>
+  <h1>Agenda de prazos <small>F1 — motor de regras</small></h1>
 </header>
 <div id="agenda">carregando…</div>
 <div class="sec">Outbox de alertas (prontos p/ WhatsApp — fio Seriema na sequência)</div>
@@ -71,5 +70,6 @@ fetch("/api/alertas").then(r=>r.json()).then(({disponivel, alertas})=>{
       `<div class="bolha">${a.mensagem}<div class="meta">#${a.id} · gatilho ${a.gatilho} · ${a.enviado_em?"enviado":"aguardando envio"}</div></div>`);
 });
 </script>
+<script src="/nav.js" defer></script>
 </body>
 </html>

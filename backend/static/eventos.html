@@ -30,8 +30,7 @@
 </head>
 <body>
 <header>
-  <h1>Tuiú · Andamento <small>F1.5 — motor de eventos</small></h1>
-  <a href="/">← Carteira</a> · <a href="/agenda.html">Agenda de prazos</a> · <a href="/notificacoes.html">Notificações</a>
+  <h1>Andamento <small>F1.5 — motor de eventos</small></h1>
 </header>
 <div class="canais" id="canais"></div>
 <div class="sec">Mudanças detectadas (diff D-1 dos processos do ente)</div>
@@ -70,5 +69,6 @@ fetch("/api/entregas").then(r=>r.json()).then(({disponivel, entregas})=>{
       `<div class="bolha">${e.mensagem}<div class="meta">#${e.id} · ${e.status}${e.enviado_em?" "+dt(e.enviado_em):""}</div></div>`);
 });
 </script>
+<script src="/nav.js" defer></script>
 </body>
 </html>

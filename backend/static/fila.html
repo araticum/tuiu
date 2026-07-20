@@ -39,12 +39,7 @@
 </head>
 <body>
 <header>
-  <h1>Tuiú · Fila do operador <small>o que fazer hoje, por cliente</small></h1>
-  <a href="/">Cockpit ▸</a> <a href="/prestacao.html">Prestação ▸</a> <a href="/eventos.html">Andamento ▸</a>
-  <a href="/notificacoes.html">Notificações ▸</a>
-  <a href="/normas.html">Normas ▸</a>
-  <a href="/inteligencia.html">Inteligência ▸</a>
-  <a href="/conta.html">Conta ▸</a>
+  <h1>Fila do operador <small>o que fazer hoje, por cliente</small></h1>
 </header>
 
 <div class="kpis" id="kpis"></div>
@@ -116,5 +111,6 @@ function triar(chave, status){
 ["cliente","soClientes","abertos"].forEach(id=>document.getElementById(id).onchange=carregar);
 carregar();
 </script>
+<script src="/nav.js" defer></script>
 </body>
 </html>

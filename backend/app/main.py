@@ -541,4 +541,50 @@ def base_rates(request: Request):
                 "funil": [], "latencia": [], "funil_acao": []}
 
 
+@app.get("/api/busca")
+def busca(request: Request, q: str = ""):
+    """Busca global do operador: acha cliente (nome/apelido/CNPJ), instrumento
+    (proposta/convênio que aparece num marco) e órgão (inteligência). Tudo do
+    tuiu-db, uma consulta por tipo, teto baixo — é o pulo pro item, não relatório."""
+    if request.state.usuario.get("papel") != "operador":
+        raise HTTPException(403, "busca é do operador")
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"resultados": []}
+    like = f"%{q}%"                                            # tuiu_norm normaliza os dois lados
+    digitos = "".join(c for c in q if c.isdigit())
+    # cláusula de CNPJ só quando há dígitos — NUL como sentinela estoura no PG
+    cond = "tuiu_norm(nome) LIKE tuiu_norm(%s) OR tuiu_norm(apelido) LIKE tuiu_norm(%s)"
+    params: list = [like, like]
+    if len(digitos) >= 2:
+        cond += " OR doc LIKE %s"
+        params.append(f"%{digitos}%")
+    out: list[dict] = []
+    try:
+        with conectar() as con:
+            for doc, nome, apelido, mun, uf in con.execute(
+                "SELECT doc, nome, apelido, municipio, uf FROM clientes"
+                f" WHERE ativo AND ({cond}) ORDER BY nome LIMIT 8", params):
+                sub = nome if (apelido and apelido != nome) else doc
+                if mun:
+                    sub += f" · {mun}/{uf}"
+                out.append({"tipo": "cliente", "titulo": apelido or nome,
+                            "sub": sub, "url": f"/cliente.html?doc={doc}"})
+            for cnpj, ente, instr, tipo in con.execute(
+                "SELECT DISTINCT ON (instrumento) cnpj, ente, instrumento, tipo FROM marcos"
+                " WHERE instrumento IS NOT NULL AND (tuiu_norm(instrumento) LIKE tuiu_norm(%s)"
+                "   OR tuiu_norm(descricao) LIKE tuiu_norm(%s)) LIMIT 6", (like, like)):
+                out.append({"tipo": "instrumento", "titulo": str(instr),
+                            "sub": f"{ente} · {tipo.replace('_', ' ')}",
+                            "url": f"/cliente.html?doc={cnpj}"})
+            for (orgao,) in con.execute(
+                "SELECT DISTINCT orgao FROM base_rates_orgao WHERE tuiu_norm(orgao) LIKE tuiu_norm(%s)"
+                " ORDER BY orgao LIMIT 5", (like,)):
+                out.append({"tipo": "órgão", "titulo": orgao,
+                            "sub": "inteligência do órgão", "url": "/inteligencia.html"})
+    except Exception as exc:  # noqa: BLE001
+        return {"resultados": [], "erro": str(exc)}
+    return {"resultados": out}
+
+
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))
