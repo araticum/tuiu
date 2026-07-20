@@ -101,9 +101,16 @@ function carregar(){
       ["", r.dirigentes, "dirigentes"],
     ].map(([cls,n,l])=>`<div class="kpi ${cls}"><b>${n}</b><span>${l}</span></div>`).join("");
 
+    const minutaLink = p => {
+      const t = p.tipo==="proposta_parada" ? "cobranca-art97"
+              : p.tipo==="complementacao_pendente" ? "resposta-diligencia" : null;
+      if(!t || !p.instrumento) return "";
+      const rot = t==="cobranca-art97" ? "📄 minuta de cobrança (art. 97)" : "📄 minuta de resposta";
+      return ` · <a href="/api/minuta/${doc}?tipo=${t}&proposta=${encodeURIComponent(p.instrumento)}" target="_blank">${rot}</a>`;
+    };
     document.getElementById("prazos").innerHTML = (f.prazos||[]).slice(0,14).map(p=>`
       <div class="li"><span class="dot ${p.farol}"></span>${p.descricao}
-        <div class="meta">${dbr(p.data_limite)}${p.dias!=null?` · ${p.dias<0?-p.dias+"d atrás":"em "+p.dias+"d"}`:""} · ${p.base_legal||""}</div>
+        <div class="meta">${dbr(p.data_limite)}${p.dias!=null?` · ${p.dias<0?-p.dias+"d atrás":"em "+p.dias+"d"}`:""} · ${p.base_legal||""}${minutaLink(p)}</div>
       </div>`).join("") || `<div class="meta">nenhum prazo aberto</div>`;
 
     const ro = f.risco_orgaos||[];

@@ -44,6 +44,7 @@ PERMISSOES_CLIENTE = (
     ("GET", "/api/cliente/"),      # só leitura da própria ficha
     ("GET", "/api/relatorio/"),
     ("GET", "/api/prestacao/"),
+    ("GET", "/api/minuta/"),       # minuta de ação da própria carteira
     ("GET", "/cliente.html"),
     ("GET", "/login.html"),
 )
@@ -54,7 +55,8 @@ def _cliente_pode(metodo: str, caminho: str) -> bool:
 
 # Rotas cujo primeiro segmento após o prefixo é o CNPJ do cliente.
 PREFIXOS_COM_DOC = ("/api/cliente/", "/api/relatorio/", "/api/prestacao/",
-                    "/api/relatorio-gestao-pix/", "/api/dossie/", "/api/entes/")
+                    "/api/relatorio-gestao-pix/", "/api/dossie/", "/api/entes/",
+                    "/api/minuta/")
 
 
 def _doc_do_caminho(caminho: str) -> str | None:
@@ -174,6 +176,53 @@ def relatorio(doc: str, dias: int = 30, formato: str = "md"):
     if formato == "json":
         return dados
     return PlainTextResponse(markdown(dados), media_type="text/markdown; charset=utf-8")
+
+
+def _pagina_minuta(titulo: str, texto: str) -> str:
+    import html
+    t, esc = html.escape(titulo), html.escape(texto)
+    return (
+        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{t}</title><style>"
+        "body{background:#0b1017;color:#dbe6f4;font:14px/1.5 system-ui,Segoe UI,sans-serif;"
+        "padding:24px;max-width:820px;margin:0 auto}h1{font-size:18px;margin:0 0 4px}"
+        ".sub{color:#8ba3bf;font-size:12.5px;margin-bottom:14px}"
+        "textarea{width:100%;height:60vh;background:#0d141d;color:#dbe6f4;border:1px solid #1e2a3a;"
+        "border-radius:10px;padding:14px;font:13px/1.6 ui-monospace,Consolas,monospace;resize:vertical}"
+        "button{background:#12324f;color:#dbe6f4;border:1px solid #4da3ff;border-radius:8px;"
+        "padding:8px 16px;font-size:13px;cursor:pointer;margin-top:10px}"
+        ".aviso{color:#e8b93c;font-size:12px;margin-top:10px}</style></head><body>"
+        f"<h1>{t}</h1><div class=\"sub\">Rascunho gerado pelo Tuiú a partir dos dados oficiais. "
+        "<b>Revise, complete a assinatura e envie você mesmo.</b></div>"
+        f"<textarea id=\"t\" readonly>{esc}</textarea>"
+        '<div><button onclick="c()">copiar texto</button></div>'
+        '<div class="aviso">⚠️ Minuta — confira nomes, datas e o objeto antes de protocolar.</div>'
+        "<script>function c(){var t=document.getElementById('t');t.select();"
+        "navigator.clipboard&&navigator.clipboard.writeText(t.value);"
+        "var b=document.querySelector('button');b.textContent='copiado \\u2713';"
+        "setTimeout(function(){b.textContent='copiar texto'},1500);}</script></body></html>")
+
+
+@app.get("/api/minuta/{doc}")
+def minuta(doc: str, tipo: str = "cobranca-art97", proposta: str = "", formato: str = "html"):
+    """Camada de ação: peça pronta (ofício de cobrança art.97, resposta a
+    diligência) a partir dos marcos que o motor já produz. Operador e o próprio
+    cliente (middleware confere o dono do CNPJ)."""
+    from fastapi.responses import HTMLResponse, PlainTextResponse
+
+    from app.minutas import GERADORES
+    gerar = GERADORES.get(tipo)
+    if gerar is None:
+        raise HTTPException(404, "tipo de minuta desconhecido")
+    if not proposta:
+        raise HTTPException(400, "informe a proposta")
+    d = gerar(doc, proposta)
+    if not d.get("disponivel"):
+        raise HTTPException(404, d.get("erro", "minuta indisponível"))
+    if formato == "md":
+        return PlainTextResponse(d["markdown"], media_type="text/markdown; charset=utf-8")
+    return HTMLResponse(_pagina_minuta(d["titulo"], d["markdown"]))
 
 
 @app.get("/api/cliente/{doc}")
