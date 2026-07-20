@@ -88,6 +88,44 @@ function blocoFunil(funil) {
     `</div>`;
 }
 
+// ---- FUNIL por AÇÃO (drill-down do órgão): onde o órgão é grosso demais ----
+function blocoAcao(rows) {
+  if (!rows || !rows.length) return "";
+  const pred = rows.filter(r => r.preditivo);
+  const novo = pred.filter(r => r.regime === 'novo_pc33');
+  const usar = novo.length ? novo : pred.filter(r => r.regime === 'legado_pi424');
+  const regLabel = novo.length ? 'regra vigente — PC 33' : 'histórico — PI 424';
+  const porOrgao = {};
+  usar.forEach(r => { (porOrgao[r.orgao] = porOrgao[r.orgao] || []).push(r); });
+  const grupos = Object.entries(porOrgao)
+    .filter(([, a]) => a.length >= 2)
+    .map(([o, a]) => {
+      a.sort((x, y) => (+x.pct_aprovada) - (+y.pct_aprovada));   // pior primeiro
+      return { orgao: o, acoes: a, amp: (+a[a.length - 1].pct_aprovada) - (+a[0].pct_aprovada) };
+    })
+    .filter(g => g.amp >= 15)                                    // só onde a ação muda a odds
+    .sort((x, y) => y.amp - x.amp);
+  if (!grupos.length) return "";
+  const linhaAcao = r => {
+    const a = +r.pct_aprovada, cor = a >= 55 ? 'aprov-alta' : (a < 25 ? 'aprov-baixa' : '');
+    return `<tr><td style="padding-left:18px">${r.acao}
+        <span style="color:var(--dim)">${(r.nome || '').slice(0, 46)}</span></td>
+      <td class="num">${(+r.n_resolvidas).toLocaleString('pt-BR')}</td>
+      <td class="num ${cor}">${r.pct_aprovada}%
+        <span class="barra-aprov" style="width:${Math.round(60 * (a || 0) / 100)}px"></span></td></tr>`;
+  };
+  const grupo = g => `<tr><td colspan="3" style="padding-top:12px;color:var(--tx)">
+      <b>${ORGAO(g.orgao)}</b> <small style="color:var(--dim)">— ${g.acoes.length} ações,
+      ${g.amp.toFixed(0)} pts entre a pior e a melhor</small></td></tr>`
+    + g.acoes.slice(0, 8).map(linhaAcao).join("")
+    + (g.acoes.length > 8 ? `<tr><td colspan="3" style="padding-left:18px;color:var(--dim)">… +${g.acoes.length - 8} ações</td></tr>` : "");
+  return `<div class="bloco">
+    <div class="titulo">①· Drill-down por ação orçamentária — onde o órgão engana
+      <small>a mesma casa aprova 0% numa ação e 100% noutra; ${regLabel}</small></div>
+    <table><tr><th>ação orçamentária</th><th class="num">propostas</th><th class="num">aprovação</th></tr>
+    ${grupos.map(grupo).join("")}</table></div>`;
+}
+
 // ---- LATÊNCIA (art.97): quanto o concedente demora para decidir ----
 function blocoLatencia(lat) {
   if (!lat || !lat.length) return "";
@@ -156,6 +194,7 @@ async function carregar() {
   const carimbo = d.funil?.[0]?.computado_em || d.base_rates?.[0]?.computado_em || "";
   alvo.innerHTML =
     blocoFunil(d.funil) +
+    blocoAcao(d.funil_acao) +
     blocoLatencia(d.latencia) +
     blocoDesfecho(d.base_rates) +
     `<div class="porque">Fonte: SICONV (detru) · computado ${carimbo.replace('T',' ').slice(0,16)}.

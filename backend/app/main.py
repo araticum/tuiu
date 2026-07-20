@@ -523,10 +523,22 @@ def base_rates(request: Request):
             except Exception:  # noqa: BLE001
                 con.rollback()
                 latencia = []
+            # funil por ação orçamentária (drill-down do órgão): idem
+            acols = ["orgao", "acao", "nome", "regime", "n_total", "n_resolvidas",
+                     "pct_aprovada", "pct_reprovada", "preditivo"]
+            try:
+                arows = con.execute(
+                    "SELECT " + ", ".join(acols) + " FROM funil_acao"
+                    " ORDER BY preditivo DESC, orgao, pct_aprovada").fetchall()
+                funil_acao = _limpar(arows, acols)
+            except Exception:  # noqa: BLE001
+                con.rollback()
+                funil_acao = []
             return {"disponivel": True, "base_rates": _limpar(rows, cols),
-                    "funil": funil, "latencia": latencia}
+                    "funil": funil, "latencia": latencia, "funil_acao": funil_acao}
     except Exception as exc:  # noqa: BLE001
-        return {"disponivel": False, "erro": str(exc), "base_rates": [], "funil": [], "latencia": []}
+        return {"disponivel": False, "erro": str(exc), "base_rates": [],
+                "funil": [], "latencia": [], "funil_acao": []}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))

@@ -18,6 +18,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "ingest" / "lake"))
 import base_rates  # noqa: E402
 import funil  # noqa: E402
+import funil_acao  # noqa: E402
 import latencia  # noqa: E402
 
 LEGADO = "01/01/2015"   # antes do corte 2023-09-01
@@ -33,6 +34,9 @@ def _con():
                 " dia_assin_conv TEXT, sit_convenio TEXT)")
     con.execute("CREATE TABLE historico_situacao (id_proposta INT, nr_convenio TEXT,"
                 " historico_sit TEXT, dias_historico_sit TEXT, dia_historico_sit TEXT)")
+    con.execute("CREATE TABLE programa (id_programa INT, acao_orcamentaria TEXT,"
+                " nome_programa TEXT, ano_disponibilizacao TEXT)")
+    con.execute("CREATE TABLE programa_proposta (id_programa INT, id_proposta INT)")
     return con
 
 
@@ -156,3 +160,42 @@ def test_latencia_ignora_proposta_sem_decisao():
     _prop(con, 1, "MIN J", dia=NOVO)
     _hist(con, 1, "PROPOSTA_ENVIADA_ANALISE", "01/06/2024 10:00:00")  # nunca decidida
     assert latencia.computar_em(con, min_linha=1) == [], "sem decisão não há latência a medir"
+
+
+# ----------------------------------------------------- funil por ação (drill-down)
+
+def _prog(con, id_programa, acao, nome, dup=1):
+    for _ in range(dup):  # dup simula a multiplicação (~405x) da tabela programa
+        con.execute("INSERT INTO programa VALUES (?,?,?,?)", [id_programa, acao, nome, "2024"])
+
+def _liga(con, id_programa, id_proposta):
+    con.execute("INSERT INTO programa_proposta VALUES (?,?)", [id_programa, id_proposta])
+
+
+def test_funil_acao_conta_proposta_distinta_apesar_da_duplicacao():
+    con = _con()
+    _prog(con, 10, "A001", "Programa Bom", dup=3)    # tabela programa multiplicada
+    _prog(con, 20, "B002", "Programa Ruim", dup=3)
+    for i in range(1, 4):                             # ação A001: 3 propostas, aprovadas
+        _prop(con, i, "MIN K", dia=NOVO, sit="Aprovados"); _liga(con, 10, i)
+    for i in range(4, 7):                             # ação B002: 3 propostas, reprovadas
+        _prop(con, i, "MIN K", dia=NOVO, sit="Rejeitados"); _liga(con, 20, i)
+    rows = {r[1]: r for r in funil_acao.computar_em(con, min_linha=1)}
+    # (orgao, acao, nome, regime, n_total, n_res, pct_aprovada, pct_reprovada)
+    assert rows["A001"][5] == 3 and rows["A001"][6] == 100.0, "3 propostas DISTINTAS (não 9 pela dup)"
+    assert rows["B002"][6] == 0.0, "ação B002 reprova 100%"
+    assert rows["A001"][2] == "Programa Bom", "rótulo do programa"
+
+
+def test_funil_acao_ignora_acao_placeholder():
+    con = _con()
+    _prog(con, 30, "00000000", "sem ação")
+    for i in range(1, 4):
+        _prop(con, i, "MIN L", dia=NOVO, sit="Aprovados"); _liga(con, 30, i)
+    assert funil_acao.computar_em(con, min_linha=1) == [], "ação-placeholder 00000000 fica de fora"
+
+
+def test_funil_acao_limpa_mojibake_do_nome():
+    assert funil_acao._limpar_nome("ESTRUTURA??O DE UNIDADES") == "ESTRUTURAO DE UNIDADES"
+    assert funil_acao._limpar_nome("ATEN��O") == "ATENO"
+    assert funil_acao._limpar_nome("  Programa X  ") == "Programa X"
