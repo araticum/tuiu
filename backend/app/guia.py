@@ -16,7 +16,11 @@ modelo grande nem no import.
 
 from __future__ import annotations
 
-from app.db import conectar
+import json
+import os
+import urllib.request
+
+from app.db import conectar  # também carrega o .env (chave da DeepInfra)
 
 MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 K_RRF = 60          # constante padrão do Reciprocal Rank Fusion
@@ -130,6 +134,65 @@ def buscar(q: str, k: int = 8, etapa: str | None = None, papel: str | None = Non
         r["trecho"] = r.pop("texto")
         saida.append(r)
     return {"resultados": saida}
+
+
+DEEPINFRA = os.environ.get("DEEPINFRA_BASE_URL") or "https://api.deepinfra.com/v1/openai"
+MODELO_CHAT = os.environ.get("TUIU_GUIA_MODELO", "deepseek-ai/DeepSeek-V4-Pro")
+
+SISTEMA = """Você é o assistente do Tuiú, que orienta quem executa transferências da \
+União como TERCEIRO (OSC/entidade privada sem fins lucrativos) em parceria com órgão federal.
+
+REGRAS DURAS:
+1. Responda SOMENTE com o que estiver nos TRECHOS fornecidos. Não use conhecimento próprio.
+2. Se a resposta não estiver nos trechos, diga exatamente o que falta e sugira em qual etapa \
+procurar. NÃO invente prazo, artigo, número de portaria nem passo de sistema.
+3. Cite a fonte de cada afirmação com o número do trecho, assim: [1], [2].
+4. Quando houver PRAZO, diga sempre DE QUEM é o prazo (do convenente ou do concedente) e a base \
+legal — confundir isso é o erro mais caro do setor.
+5. Português do Brasil, direto e prático. Sem enrolação, sem repetir a pergunta. Se couber passo \
+a passo, use lista curta.
+6. Regra muda por regime (PI 424 antigo · PC 33 completo · PC 28 simplificado): se a resposta \
+depender do regime, diga isso."""
+
+
+def perguntar(q: str, k: int = 6) -> dict:
+    """RAG: recupera no acervo e responde ancorado, citando a fonte.
+
+    A recuperação é local e de graça; só a redação da resposta vai à DeepInfra.
+    Sem chave, degrada para os trechos (a busca continua útil) em vez de quebrar.
+    """
+    q = (q or "").strip()
+    if len(q) < 3:
+        return {"resposta": None, "erro": "pergunta muito curta", "fontes": []}
+    hits = buscar(q, k=k).get("resultados", [])
+    if not hits:
+        return {"resposta": None, "erro": "nada encontrado no acervo", "fontes": []}
+
+    chave = os.environ.get("DEEPINFRA_API_KEY")
+    if not chave:
+        return {"resposta": None, "fontes": hits,
+                "erro": "sem DEEPINFRA_API_KEY — mostrando só os trechos encontrados"}
+
+    contexto = "\n\n".join(
+        f"[{n}] (fonte: {h['fonte']} · etapa: {h.get('etapa') or '—'} · {h['documento']})\n{h['trecho']}"
+        for n, h in enumerate(hits, 1))
+    corpo = json.dumps({
+        "model": MODELO_CHAT,
+        "messages": [{"role": "system", "content": SISTEMA},
+                     {"role": "user", "content": f"TRECHOS:\n{contexto}\n\nPERGUNTA: {q}"}],
+        "temperature": 0.2, "max_tokens": 700,
+    }).encode()
+    req = urllib.request.Request(f"{DEEPINFRA}/chat/completions", data=corpo, headers={
+        "Authorization": f"Bearer {chave}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        texto = (d.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        uso = d.get("usage") or {}
+    except Exception as exc:  # noqa: BLE001 — LLM fora do ar não tira a busca do ar
+        return {"resposta": None, "fontes": hits, "erro": f"falha na geração: {exc}"}
+    return {"resposta": texto or None, "fontes": hits, "modelo": MODELO_CHAT,
+            "tokens": uso.get("total_tokens")}
 
 
 def etapas() -> list[dict]:

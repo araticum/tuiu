@@ -562,6 +562,16 @@ def guia_etapas():
         return {"disponivel": False, "erro": str(exc), "etapas": []}
 
 
+@app.get("/api/guia/perguntar")
+def guia_perguntar(q: str = "", k: int = 6):
+    """Chat do guia (RAG): responde ancorado no acervo, citando a fonte."""
+    try:
+        from app.guia import perguntar
+        return {"disponivel": True, **perguntar(q, k=max(3, min(k, 10)))}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "resposta": None, "fontes": []}
+
+
 @app.get("/api/guia/conteudo")
 def guia_conteudo():
     """O guia próprio (pipeline completo), para navegar por etapa."""
