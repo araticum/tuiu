@@ -43,7 +43,8 @@
     + "#tuiunav .drop a:hover{background:#141d29}"
     + "@media(max-width:860px){#tuiunav .tab.sec{display:none}#tuiunav .busca input{width:120px}#tuiunav .busca input:focus{width:170px}}";
 
-  var TABS = [["Cockpit", "/"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"], ["Inteligência", "/inteligencia.html"]];
+  var TABS = [["Cockpit", "/"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"],
+              ["Inteligência", "/inteligencia.html"], ["Guia", "/guia.html"]];
   var MAIS = [["Agenda de prazos", "/agenda.html"], ["Andamento", "/eventos.html"],
               ["Notificações", "/notificacoes.html"], ["Normas", "/normas.html"], ["Prestação de contas", "/prestacao.html"]];
 
@@ -63,7 +64,8 @@
     } else if (user) {
       var doc = user.doc_cliente || "";
       tabs = '<a class="tab ' + (AQUI.indexOf("/cliente") === 0 ? "on" : "") + '" href="/cliente.html?doc=' + doc + '">Minha ficha</a>'
-        + '<a class="tab ' + (ativo("/prestacao.html") ? "on" : "") + '" href="/prestacao.html">Prestação</a>';
+        + '<a class="tab ' + (ativo("/prestacao.html") ? "on" : "") + '" href="/prestacao.html">Prestação</a>'
+        + '<a class="tab ' + (ativo("/guia.html") ? "on" : "") + '" href="/guia.html">Guia</a>';
     }
     var quem = esc((user && (user.nome || user.login)) || "conta");
     nav.innerHTML = '<a class="marca" href="/">Tui<span>ú</span></a>' + tabs + mais

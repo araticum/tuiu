@@ -1,0 +1,177 @@
+{
+  "titulo": "Guia de gestão das transferências da União — pipeline completo",
+  "aviso": "Guia próprio do Tuiú, escrito para o TERCEIRO EXECUTOR (OSC/entidade privada sem fins lucrativos) que executa recursos em parceria com órgão público federal. Os prazos citados vêm das regras normativas versionadas da plataforma; os 'como fazer' remetem aos tutoriais oficiais do Transferegov (acervo indexado). Regra muda a cada trimestre: confira sempre o regime e a data do seu instrumento.",
+  "regimes": [
+    {"regime": "legado_pi424", "nome": "PI 424/2016", "quando": "instrumentos anteriores a 01/09/2023", "nota": "Regime antigo. Ainda rege a maior parte do estoque em execução e prestação de contas."},
+    {"regime": "completo_pc33", "nome": "PC 33/2023 (completo)", "quando": "a partir de 01/09/2023, acima do teto do simplificado", "nota": "Regime completo, com os prazos dos arts. 95-98."},
+    {"regime": "simplificado_pc28", "nome": "PC 28/2024 (simplificado)", "quando": "a partir de 01/09/2023, até o teto (R$ 1.576.882,20)", "nota": "Prestação simplificada. Migração ao simplificado por aditivo (PC 46/2026), com valor na data da migração."}
+  ],
+  "secoes": [
+    {
+      "etapa": "1. Cadastro e credenciamento",
+      "o_que_e": "Antes de qualquer proposta, a entidade precisa existir no Transferegov.br e ter gente habilitada a agir por ela. O cadastro da OSC é a porta: sem ele, nenhuma proposta é possível. Envolve o CNPJ da entidade, os DIRIGENTES (quem responde legalmente) e os USUÁRIOS (quem opera o sistema no dia a dia).",
+      "o_que_fazer": [
+        "Cadastrar a OSC no Transferegov.br (o cadastro é da entidade, não da pessoa).",
+        "Cadastrar os dirigentes: quem tem poder de assinar pela entidade, conforme o estatuto e a ata de eleição vigente.",
+        "Cadastrar os usuários operadores e vincular perfis (quem preenche proposta, quem envia, quem presta contas).",
+        "Manter o cadastro VIVO: mandato de dirigente vencido trava a assinatura na hora da celebração.",
+        "Conferir a regularidade da entidade E dos dirigentes (CEPIM/CEIS/CNEP) — impedimento de dirigente contamina a entidade."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Dirigente com mandato vencido no cadastro: a celebração trava e o prazo do programa não espera.",
+        "Só o CPF opera o sistema — não existe empresa operando por empresa. Quem assina é a pessoa física habilitada.",
+        "Entidade impedida (CEPIM) não celebra. O motivo típico é prestação de contas não apresentada em instrumento anterior."
+      ],
+      "tuiu_faz": "Monitora a regularidade da entidade e de cada dirigente (CEPIM/CEIS/CNEP) e avisa quando alguém fica impedido, antes de você descobrir na hora de assinar."
+    },
+    {
+      "etapa": "2. Antes de propor: escolher onde",
+      "o_que_e": "Etapa que não existe em manual nenhum, e é onde se ganha ou se perde. Antes de escrever a proposta, decide-se A QUAL ÓRGÃO e A QUAL AÇÃO/PROGRAMA levá-la. Essa escolha, sozinha, muda a probabilidade de aprovação em dezenas de pontos percentuais.",
+      "o_que_fazer": [
+        "Ver a taxa histórica de aprovação de proposta de OSC no órgão pretendido (o funil).",
+        "Descer para a AÇÃO orçamentária: dentro do mesmo órgão, ações diferentes aprovam de forma muito diferente.",
+        "Ver quanto o órgão historicamente DEMORA para analisar (mediana) — isso define seu planejamento, não a lei.",
+        "Ver a taxa de morte pós-celebração do órgão (anulação/cancelamento/inadimplência): aprovar é metade do caminho.",
+        "Conferir o defeso eleitoral: em ano eleitoral há janela de vedação a novas transferências voluntárias."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Olhar só o órgão é grosso demais: a variação ENTRE AÇÕES dentro de um mesmo órgão chega a quase 100 pontos.",
+        "Base rate de regime antigo não prevê o de hoje: a regra mudou em 01/09/2023 e o comportamento mudou junto."
+      ],
+      "tuiu_faz": "Calcula, sobre 18 anos de histórico e SEPARADO POR REGIME: o funil de aprovação por órgão e por ação orçamentária, a latência real de análise, e a taxa de desfecho pós-celebração. É a aba Inteligência."
+    },
+    {
+      "etapa": "3. Proposta e plano de trabalho",
+      "o_que_e": "A proposta é o pedido; o plano de trabalho é o COMO. É aqui que se define objeto, metas, etapas, cronograma físico, cronograma de desembolso, itens de despesa (PAD/PAC) e o termo de referência. A maior parte das rejeições e diligências nasce de defeito nesta etapa.",
+      "o_que_fazer": [
+        "Preencher os dados da proposta: objeto, justificativa, público-alvo, e a relação com os objetivos do programa.",
+        "Montar o cronograma FÍSICO: metas e etapas com datas de início e fim coerentes com a vigência.",
+        "Montar o cronograma de DESEMBOLSO: as parcelas previstas, compatíveis com o cronograma físico.",
+        "Detalhar o plano de aplicação (PAD/PAC) e anexar os documentos exigidos.",
+        "Elaborar o Termo de Referência / projeto básico com composição de custos — planilha sem composição é causa clássica de diligência.",
+        "REVISAR tudo antes de enviar: depois do envio, alterar exige diligência do órgão."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Cronograma físico incompatível com o de desembolso: diligência certa.",
+        "Orçamento sem composição de custos unitários e sem 3 orçamentos comparativos quando exigido.",
+        "Data de início de vigência anterior à assinatura — o instrumento não retroage."
+      ],
+      "tuiu_faz": "Acompanha cada proposta e avisa quando ela fica parada, em complementação ou é rejeitada — com o parecer do órgão em mãos, para você saber o que foi pedido."
+    },
+    {
+      "etapa": "4. Análise do concedente",
+      "o_que_e": "A proposta enviada entra na fila do órgão. Ele analisa dados da proposta, plano de trabalho e termo de referência, emite parecer e decide: aprova, devolve para complementação (diligência) ou rejeita. AQUI O PRAZO É DELE, não seu — e é a alavanca mais subutilizada pelo convenente.",
+      "o_que_fazer": [
+        "Acompanhar a situação da proposta; não presumir que silêncio é andamento.",
+        "Se voltou em COMPLEMENTAÇÃO: responder ponto a ponto o que o parecer pediu, anexando o que foi solicitado. Não responda por cima.",
+        "Se ESTOUROU o prazo de análise: cobrar formalmente o concedente citando o art. 97 — é mora administrativa dele.",
+        "Se foi REJEITADA: ler o parecer, decidir entre corrigir e reapresentar ou encerrar. Guardar o motivo para não repetir."
+      ],
+      "prazos": [
+        {"o_que": "Análise pelo concedente — processo informatizado", "prazo": "60 dias", "base_legal": "PC 33/2023, art. 97, I e §1º", "de_quem": "concedente"},
+        {"o_que": "Análise pelo concedente — processo convencional", "prazo": "180 dias", "base_legal": "PC 33/2023, art. 97, II e §2º", "de_quem": "concedente"}
+      ],
+      "armadilhas": [
+        "Achar que o prazo do art. 97 é do convenente. Não é: vencido, corre contra o ÓRGÃO.",
+        "Deixar a diligência vencer: o prazo de resposta à complementação é fixado no parecer e é seu."
+      ],
+      "tuiu_faz": "Marca a proposta parada, calcula há quantos dias o art. 97 está vencido e GERA A MINUTA do ofício de cobrança pronta, citando o artigo e o histórico do órgão."
+    },
+    {
+      "etapa": "5. Celebração e formalização",
+      "o_que_e": "Aprovado o plano de trabalho, o instrumento é formalizado e assinado, publicado, e passa a existir juridicamente. Define-se vigência, valores (repasse e contrapartida), conta bancária específica e as cláusulas suspensivas, se houver.",
+      "o_que_fazer": [
+        "Conferir vigência: a data de assinatura não pode ser posterior ao início da vigência.",
+        "Abrir/indicar a conta bancária específica do instrumento — recurso de convênio não se mistura.",
+        "Verificar cláusula suspensiva: enquanto pendente, não há liberação.",
+        "Registrar a contrapartida, quando exigida.",
+        "Guardar o instrumento assinado e a publicação: a contagem de prazos futuros parte daqui."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Assinar com dirigente cujo mandato venceu entre a proposta e a celebração.",
+        "Iniciar despesa antes da vigência: despesa fora da vigência é glosa certa na prestação de contas."
+      ],
+      "tuiu_faz": "Registra o marco de fim de vigência e avisa com antecedência, junto com o limite de prestação de contas derivado dele."
+    },
+    {
+      "etapa": "6. Execução",
+      "o_que_e": "O dinheiro entra e o objeto é executado. É a etapa mais longa e a que mais gera passivo: contratação de fornecedores, liberação de parcelas, pagamentos por OBTV, liquidação e comprovação. Cada pagamento precisa de rastro documental.",
+      "o_que_fazer": [
+        "Preparar a execução: registrar no sistema antes de contratar.",
+        "Registrar o processo de contratação/licitação e submetê-lo à análise do concedente quando exigido.",
+        "Cadastrar credores e registrar os contratos com fornecedores.",
+        "Emitir os documentos de liquidação (a despesa precisa estar liquidada antes de paga).",
+        "Pagar fornecedores por OBTV — Ordem Bancária de Transferências Voluntárias, o meio obrigatório para o recurso da conta específica.",
+        "Guardar nota fiscal, comprovante e a vinculação de cada pagamento à meta/etapa do plano."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Pagar fora da OBTV quando ela é obrigatória: o pagamento não é reconhecido.",
+        "Contratar antes de registrar/aprovar o processo, quando a análise prévia é exigida.",
+        "Rendimento de aplicação financeira não registrado — ele é do instrumento e entra na prestação."
+      ],
+      "tuiu_faz": "Acompanha o cronograma físico e as parcelas previstas, e avisa etapa vencida e parcela que não saiu."
+    },
+    {
+      "etapa": "7. Alterações no meio do caminho",
+      "o_que_e": "Quase nenhum instrumento termina como começou. Prorrogação de vigência, remanejamento entre metas, alteração de valor ou de plano de trabalho exigem formalização — por termo aditivo ou por ajuste do plano, conforme o caso.",
+      "o_que_fazer": [
+        "Pedir a prorrogação ANTES do fim da vigência — vigência vencida não se prorroga, se encerra.",
+        "Formalizar remanejamento e alteração de metas no plano de trabalho, com justificativa.",
+        "Verificar se o caso é aditivo (altera o instrumento) ou ajuste do plano (altera a execução).",
+        "Para migrar ao regime simplificado, quando cabível, usar aditivo — o valor considerado é o da data da migração."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Executar a mudança antes de formalizá-la: vira despesa não prevista.",
+        "Deixar a prorrogação para os últimos dias: o órgão também precisa de prazo para analisar."
+      ],
+      "tuiu_faz": "Marca o fim de vigência com antecedência para a prorrogação ser pedida a tempo."
+    },
+    {
+      "etapa": "8. Prestação de contas",
+      "o_que_e": "O fechamento: demonstrar que o objeto foi cumprido e o recurso aplicado conforme o plano. É onde o passivo aparece — e o prazo de APRESENTAÇÃO é seu; o de ANÁLISE é do órgão.",
+      "o_que_fazer": [
+        "Reunir a comprovação física (o objeto foi entregue) e financeira (cada real, com documento).",
+        "Apresentar a prestação no prazo, pelo sistema, conforme o regime do instrumento.",
+        "Devolver saldo remanescente, se houver, no prazo.",
+        "Se vier diligência/saneamento: responder no prazo fixado — é a última chance antes da inadimplência.",
+        "Guardar tudo: a guarda conta da APROVAÇÃO da prestação, não do fim da vigência."
+      ],
+      "prazos": [
+        {"o_que": "Apresentar a prestação de contas", "prazo": "60 dias do fim da vigência", "base_legal": "PC 33/2023, art. 96", "de_quem": "convenente"},
+        {"o_que": "Saneamento de impropriedades", "prazo": "30 dias (era 45 até 14/07/2026)", "base_legal": "PC 33/2023, art. 97, §3º (redação da PC 45/2026)", "de_quem": "convenente"},
+        {"o_que": "Devolução de saldos remanescentes", "prazo": "30 dias", "base_legal": "PC 33/2023, art. 95, §1º", "de_quem": "convenente"},
+        {"o_que": "Prazo após notificação", "prazo": "45 dias", "base_legal": "PC 33/2023, art. 96, §2º, I", "de_quem": "convenente"},
+        {"o_que": "Devolução após notificação", "prazo": "30 dias", "base_legal": "PC 33/2023, art. 96, §2º, II", "de_quem": "convenente"},
+        {"o_que": "Registro do recebimento", "prazo": "15 dias", "base_legal": "PC 33/2023, art. 98, §2º", "de_quem": "concedente"}
+      ],
+      "armadilhas": [
+        "Confundir prestação ENTREGUE com prestação APROVADA: entregue e parada na análise, o atraso é do órgão, não seu.",
+        "Descartar documento cedo: a guarda conta da aprovação da prestação.",
+        "Ignorar rendimento de aplicação e saldo em conta: entram na prestação."
+      ],
+      "tuiu_faz": "Distingue quem está com a bola: se a prestação já foi entregue e está parada na análise, não acusa você de atraso — e ainda mostra há quanto tempo o órgão está sentado nela."
+    },
+    {
+      "etapa": "9. Riscos, passivos e o que dá errado",
+      "o_que_e": "A cadeia do dano: prestação não apresentada ou rejeitada → notificação → inadimplência → inscrição no CEPIM → impedimento de celebrar novas parcerias → Tomada de Contas Especial (TCE) e responsabilização dos dirigentes.",
+      "o_que_fazer": [
+        "Tratar notificação como prazo fatal, não como aviso.",
+        "Se houver inadimplência antiga, regularizar antes de tentar nova proposta — o CEPIM barra a celebração.",
+        "Em caso de dano ao erário apurado, a TCE alcança os dirigentes pessoalmente.",
+        "Manter o dossiê organizado por instrumento: em TCE, o que não está documentado não aconteceu."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Descobrir o impedimento na hora de celebrar a próxima parceria.",
+        "Achar que a responsabilidade é só da entidade: o dirigente responde."
+      ],
+      "tuiu_faz": "Vigia CEPIM/CEIS/CNEP da entidade e dos dirigentes, e mantém o dossiê e a trilha de cada instrumento."
+    }
+  ]
+}

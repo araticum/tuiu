@@ -40,6 +40,9 @@ if [ ! -d .venv ]; then
 fi
 ./.venv/bin/pip -q install --upgrade pip
 ./.venv/bin/pip -q install "psycopg[binary]" pytest
+# guia: extrai texto do acervo oficial (pymupdf) e embeda local em ONNX (fastembed).
+# Modelo pequeno de propósito — este host roda a produção do veredas.
+./.venv/bin/pip -q install pymupdf fastembed
 
 # Banco: container DEDICADO (não há Postgres nativo no host, e o veredas-db é
 # produção do oasis.v2 — não se encosta).

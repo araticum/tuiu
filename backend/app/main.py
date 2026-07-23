@@ -45,6 +45,8 @@ PERMISSOES_CLIENTE = (
     ("GET", "/api/relatorio/"),
     ("GET", "/api/prestacao/"),
     ("GET", "/api/minuta/"),       # minuta de ação da própria carteira
+    ("GET", "/api/guia"),          # o guia é conhecimento público (manuais oficiais)
+    ("GET", "/guia.html"),
     ("GET", "/cliente.html"),
     ("GET", "/login.html"),
 )
@@ -548,6 +550,54 @@ def base_rates(request: Request):
     except Exception as exc:  # noqa: BLE001
         return {"disponivel": False, "erro": str(exc), "base_rates": [],
                 "funil": [], "latencia": [], "funil_acao": []}
+
+
+@app.get("/api/guia/etapas")
+def guia_etapas():
+    """Esqueleto do pipeline (etapas do acervo oficial) para navegar o guia."""
+    try:
+        from app.guia import etapas
+        return {"disponivel": True, "etapas": etapas()}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "etapas": []}
+
+
+@app.get("/api/guia/conteudo")
+def guia_conteudo():
+    """O guia próprio (pipeline completo), para navegar por etapa."""
+    import json as _json
+    arq = Path(__file__).resolve().parents[2] / "ingest" / "manuais" / "guia_pipeline.json"
+    try:
+        return {"disponivel": True, **_json.loads(arq.read_text(encoding="utf-8"))}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "secoes": []}
+
+
+@app.get("/api/guia/pdf/{trecho_id}")
+def guia_pdf(trecho_id: int):
+    """Serve o PDF oficial do acervo — a consulta na íntegra. Só de dentro da
+    raiz do acervo: caminho vindo do banco não entra em FileResponse sem trava."""
+    from fastapi.responses import FileResponse
+    raiz = Path("/mnt/dados-gov/tuiu-manuais").resolve()
+    with conectar() as con:
+        r = con.execute("SELECT arquivo FROM guia_trechos WHERE id=%s", (trecho_id,)).fetchone()
+    if not r or not r[0]:
+        raise HTTPException(404, "este trecho não tem PDF (é do guia próprio)")
+    p = Path(r[0]).resolve()
+    if raiz not in p.parents or not p.exists():
+        raise HTTPException(404, "arquivo fora do acervo")
+    return FileResponse(p, media_type="application/pdf", filename=p.name)
+
+
+@app.get("/api/guia/buscar")
+def guia_buscar(q: str = "", k: int = 8, etapa: str = "", papel: str = ""):
+    """Busca híbrida no acervo: semântica (embedding local) + FTS português."""
+    try:
+        from app.guia import buscar
+        return {"disponivel": True,
+                **buscar(q, k=max(1, min(k, 20)), etapa=etapa or None, papel=papel or None)}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "resultados": []}
 
 
 @app.get("/api/busca")
