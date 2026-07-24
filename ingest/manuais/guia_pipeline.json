@@ -43,6 +43,25 @@
       "tuiu_faz": "Calcula, sobre 18 anos de histórico e SEPARADO POR REGIME: o funil de aprovação por órgão e por ação orçamentária, a latência real de análise, e a taxa de desfecho pós-celebração. É a aba Inteligência."
     },
     {
+      "etapa": "Emendas parlamentares — o que a OSC precisa",
+      "o_que_e": "Boa parte do recurso que chega a OSC vem de EMENDA PARLAMENTAR (individual ou de bancada) que o parlamentar direciona a um programa ou objeto. A emenda é a FONTE do dinheiro; o instrumento continua sendo um convênio ou uma parceria (MROSC). Não confundir com transferência especial (Pix, art. 166-A), que é exclusiva de ENTE — OSC não recebe Pix.",
+      "o_que_fazer": [
+        "Estar cadastrada e habilitada no Transferegov.br, com dirigentes e usuários com mandato vigente.",
+        "Estar REGULAR — a entidade e os dirigentes sem impedimento (CEPIM/CEIS/CNEP); impedimento barra a celebração.",
+        "Confirmar que a emenda foi registrada e indicada pelo parlamentar ao programa e ao beneficiário: sem a indicação vinculada, não há recurso a receber.",
+        "Apresentar a proposta e o plano de trabalho no PROGRAMA correspondente, dentro da janela de recebimento de propostas.",
+        "Atender aos requisitos do programa específico: cada programa ou órgão pode exigir documentos e condições próprios — leia o programa antes.",
+        "Acompanhar o cronograma de emendas do órgão (os prazos de indicação e de proposta mudam a cada ano, por portaria)."
+      ],
+      "prazos": [],
+      "armadilhas": [
+        "Achar que ter a emenda indicada basta: sem cadastro, regularidade e proposta aprovada no programa, o recurso não é liberado.",
+        "Confundir emenda que vira convênio/parceria (o nosso caso) com transferência especial Pix (exclusiva de ente).",
+        "Perder a janela de recebimento de propostas do programa — a emenda existe, mas sem proposta no prazo ela não se materializa."
+      ],
+      "tuiu_faz": "Monitora as propostas do cliente e a regularidade da entidade e dos dirigentes, e avisa quando um impedimento pode barrar a celebração da parceria financiada por emenda."
+    },
+    {
       "etapa": "3. Proposta e plano de trabalho",
       "o_que_e": "A proposta é o pedido; o plano de trabalho é o COMO. É aqui que se define objeto, metas, etapas, cronograma físico, cronograma de desembolso, itens de despesa (PAD/PAC) e o termo de referência. A maior parte das rejeições e diligências nasce de defeito nesta etapa.",
       "o_que_fazer": [
@@ -106,6 +125,7 @@
         "Cadastrar credores e registrar os contratos com fornecedores.",
         "Emitir os documentos de liquidação (a despesa precisa estar liquidada antes de paga).",
         "Pagar fornecedores por OBTV — Ordem Bancária de Transferências Voluntárias, o meio obrigatório para o recurso da conta específica.",
+        "DOCUMENTOS DE LANÇAMENTO NO SIAFI (créditos e recursos): quando o recurso entra e é movimentado, o SIAFI (sistema financeiro federal) gera documentos com número — de CRÉDITO (o lado orçamentário: nota de empenho, nota de crédito) e de RECURSO (o lado financeiro: ingresso de recursos, ordem bancária). Um relatório pode pedir esses números. Onde achar: na aba FINANCEIRA da execução do instrumento no Transferegov, com o perfil GESTOR FINANCEIRO — que classifica cada ingresso de recurso e o envia ao SIAFI, gerando o documento; ou solicitando ao concedente, que emite os documentos orçamentários.",
         "Guardar nota fiscal, comprovante e a vinculação de cada pagamento à meta/etapa do plano."
       ],
       "prazos": [],

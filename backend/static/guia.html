@@ -42,6 +42,13 @@
   .hitem{ padding:7px 11px; border-radius:8px; cursor:pointer } .hitem:hover{ background:#141d29 }
   .hitem+.hitem{ border-top:1px solid var(--linha) }
   .hq{ font-size:13px; color:var(--tx) } .hm{ font-size:11px; color:var(--dim); margin-top:1px }
+  .proc{ display:flex; align-items:center; gap:14px; background:var(--card); border:1px solid var(--linha); border-radius:11px; padding:14px 17px; max-width:1000px }
+  .spin{ width:22px; height:22px; border:3px solid #26364a; border-top-color:var(--acento); border-radius:50%; animation:sp .8s linear infinite; flex:0 0 auto }
+  @keyframes sp{ to{ transform:rotate(360deg) } }
+  #procMsg{ font-size:13.5px; color:var(--tx) }
+  .proclog{ font-size:11.5px; color:var(--dim); margin-top:3px; font-family:ui-monospace,Consolas,monospace }
+  .proctimer{ font-variant-numeric:tabular-nums; color:var(--acento); font-weight:600; font-size:15px; flex:0 0 auto; min-width:42px; text-align:right }
+  .barra button:disabled{ opacity:.55; cursor:default }
   .grid{ display:grid; grid-template-columns:250px 1fr; gap:20px; align-items:start; max-width:1200px }
   @media (max-width:900px){ .grid{ grid-template-columns:1fr } }
   .lat{ background:var(--card); border:1px solid var(--linha); border-radius:11px; padding:10px 12px; position:sticky; top:70px }
@@ -70,7 +77,7 @@
 
 <div class="barra">
   <input id="q" placeholder="Ex.: qual o prazo da prestação de contas? como pago fornecedor por OBTV?" autocomplete="off">
-  <button onclick="buscar()">buscar</button>
+  <button id="btnBuscar" onclick="buscar()">buscar</button>
   <button onclick="toggleHist()" title="histórico de perguntas e respostas">🕘 histórico</button>
 </div>
 <div id="hist" style="display:none"></div>
@@ -108,33 +115,61 @@ function fmt(t){
   return html + (lista ? "</ul>" : "");
 }
 
+let buscando = false;
 function buscar(){
+  if(buscando) return;                 // trava: ignora clique repetido enquanto uma pergunta roda
   const q = document.getElementById("q").value.trim();
   const el = document.getElementById("res");
   if(q.length < 3){ el.innerHTML = ""; return; }
-  el.innerHTML = `<div class="vazio">consultando o acervo…</div>`;
-  fetch(`/api/guia/perguntar?q=${encodeURIComponent(q)}&k=6`).then(r=>r.json()).then(d=>{
-    const rs = d.fontes||[];
-    if(!rs.length){ el.innerHTML = `<div class="vazio">Nada encontrado para “${esc(q)}”.</div>`; return; }
-    const cab = d.resposta
-      ? `<div class="resp">${fmt(d.resposta)}
-           <div class="respfoot">resposta gerada a partir dos trechos abaixo · ${esc(d.modelo||"")}
-           — confira sempre na fonte oficial</div></div>`
-      : `<div class="resp aviso">${esc(d.erro||"sem resposta gerada")} — veja os trechos encontrados:</div>`;
-    el.innerHTML = cab + `<div class="fontes">Fontes</div>` + rs.map(x=>{
-      const pag = x.pagina_ini ? `p.${x.pagina_ini}${x.pagina_fim&&x.pagina_fim!=x.pagina_ini?"-"+x.pagina_fim:""}` : "";
-      const pdf = x.arquivo ? ` · <a href="/api/guia/pdf/${x.id}#page=${x.pagina_ini||1}" target="_blank">abrir PDF oficial ${pag}</a>` : "";
-      return `<div class="hit">
-        <div class="top">
-          <span class="tag ${x.fonte}">${esc(x.fonte==="guia"?"guia":"manual oficial")}</span>
-          ${x.etapa?`<span class="tag">${esc(x.etapa)}</span>`:""}
-          ${x.papel&&x.papel!=="geral"?`<span class="tag">${esc(x.papel)}</span>`:""}
-        </div>
-        <div class="doc">${esc(x.documento)}${pdf}</div>
-        <div class="txt">${esc(x.trecho).slice(0,420)}…</div>
-      </div>`;
-    }).join("");
-  });
+  buscando = true;
+  const btn = document.getElementById("btnBuscar");
+  if(btn){ btn.disabled = true; btn.textContent = "buscando…"; }
+  const t0 = Date.now(), hEnvio = new Date().toLocaleTimeString("pt-BR");
+  el.innerHTML = `<div class="proc"><div class="spin"></div>
+    <div style="flex:1"><div id="procMsg">Enviando pergunta ao acervo…</div>
+      <div class="proclog" id="procLog">▸ enviado às ${hEnvio}</div></div>
+    <div class="proctimer" id="procTimer">0s</div></div>`;
+  const timer = setInterval(()=>{
+    const s = Math.round((Date.now()-t0)/1000);
+    const t = document.getElementById("procTimer"); if(t) t.textContent = s+"s";
+    const m = document.getElementById("procMsg"); if(!m) return;
+    if(s < 2) m.textContent = "Buscando no acervo…";
+    else if(s < 6) m.textContent = "Gerando resposta com base no acervo…";
+    else if(s < 15) m.textContent = "Gerando resposta… (o modelo está redigindo)";
+    else m.textContent = "Ainda gerando — cache frio pode levar 15–30s. Aguarde, não reenvie.";
+  }, 500);
+
+  fetch(`/api/guia/perguntar?q=${encodeURIComponent(q)}&k=6`)
+    .then(r=>r.json())
+    .then(d=>{
+      const dt = ((Date.now()-t0)/1000).toFixed(1), hResp = new Date().toLocaleTimeString("pt-BR");
+      const log = `enviado ${hEnvio} · recebido ${hResp} · ${dt}s`;
+      const rs = d.fontes||[];
+      if(!d.resposta && !rs.length){
+        el.innerHTML = `<div class="resp aviso">${esc(d.erro||`Nada encontrado para “${q}”.`)}<div class="respfoot" style="border:0;color:#8ba3bf">${log}</div></div>`;
+        return;
+      }
+      const cab = d.resposta
+        ? `<div class="resp">${fmt(d.resposta)}
+             <div class="respfoot">${esc(d.modelo||"")} · ${log} — confira sempre na fonte oficial</div></div>`
+        : `<div class="resp aviso">${esc(d.erro||"sem resposta gerada")} — veja os trechos abaixo. <span style="color:#8ba3bf">(${log})</span></div>`;
+      el.innerHTML = cab + (rs.length ? `<div class="fontes">Fontes</div>` + rs.map(x=>{
+        const pag = x.pagina_ini ? `p.${x.pagina_ini}${x.pagina_fim&&x.pagina_fim!=x.pagina_ini?"-"+x.pagina_fim:""}` : "";
+        const pdf = x.arquivo ? ` · <a href="/api/guia/pdf/${x.id}#page=${x.pagina_ini||1}" target="_blank">abrir PDF oficial ${pag}</a>` : "";
+        return `<div class="hit">
+          <div class="top">
+            <span class="tag ${x.fonte}">${esc(x.fonte==="guia"?"guia":"manual oficial")}</span>
+            ${x.etapa?`<span class="tag">${esc(x.etapa)}</span>`:""}
+            ${x.papel&&x.papel!=="geral"?`<span class="tag">${esc(x.papel)}</span>`:""}
+          </div>
+          <div class="doc">${esc(x.documento)}${pdf}</div>
+          <div class="txt">${esc(x.trecho).slice(0,420)}…</div>
+        </div>`;
+      }).join("") : "");
+    })
+    .catch(e=>{ el.innerHTML = `<div class="resp aviso">Falha ao consultar o acervo: ${esc(String(e))}. Tente de novo.</div>`; })
+    .finally(()=>{ clearInterval(timer); buscando = false;
+      if(btn){ btn.disabled = false; btn.textContent = "buscar"; } });
 }
 let histCache = [];
 function toggleHist(){

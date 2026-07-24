@@ -27,16 +27,23 @@ BASE = "https://www.gov.br/transferegov/++api++/pt-br/"
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)", "Accept": "application/json"}
 DESTINO = Path("/mnt/dados-gov/tuiu-manuais")
 
-# O foco é o universo DISCRICIONÁRIAS/LEGAIS de OSC, nas suas duas faces: convênios
-# (discricionarias, legado PI 424) + o ciclo novo de parcerias MROSC (gestao-de-
-# parcerias, g2/PC 33). Cadastro/perfis são transversais (precisa pra operar
-# qualquer um). FORA: Especiais/Pix (art. 166-A é só de ENTE, não de OSC), Obras,
-# TED, Fundo a Fundo, PAC — não é o que a casa opera.
+# Acervo do GUIA de referência — inclusivo de propósito: o operador pergunta sobre
+# qualquer coisa, e faltar um módulo custa um "não sei" (foi o que aconteceu com
+# emendas e com o Relatório de Gestão/SIAFI). Cobre o universo do terceiro-executor:
+# convênios (discricionarias), parcerias MROSC (gestao-de-parcerias), transferências
+# especiais/Pix (relatório de gestão, campos SIAFI), cadastro/perfis (transversais)
+# e as cartilhas de emendas parlamentares (que financiam convênio de OSC).
+# NB: incluir Pix no GUIA de referência ≠ operar Pix — o núcleo (base rates/marcos)
+# segue sem Pix. FORA do acervo: Obras, TED, Fundo a Fundo, PAC.
 MODULOS = {
     "discricionarias": "manuais/transferegov/discricionarias",
     "parcerias": "manuais/transferegov/gestao-de-parcerias",
+    "especiais": "manuais/transferegov/especiais",
     "cadastro": "manuais/transferegov/cadastro",
     "perfis": "manuais/transferegov/perfis-x-funcionalidades",
+    # emendas: as cartilhas do gov.br dão 401 (restritas, via cadeia de Link) e são
+    # pra PARLAMENTAR, não pra OSC. Cobrimos "requisitos p/ OSC receber emenda" no
+    # GUIA autoral (seção própria), que é mais preciso pro nosso cliente.
 }
 # Nome legível do módulo, usado como ETAPA quando os PDFs vêm SOLTOS (sem
 # subpasta): é o caso de parcerias/especiais/cadastro, onde cada arquivo é filho
@@ -44,8 +51,10 @@ MODULOS = {
 MODULO_NOME = {
     "discricionarias": "Discricionárias e Legais",
     "parcerias": "Gestão de Parcerias (ciclo novo)",
+    "especiais": "Transferências Especiais / Relatório de Gestão (Pix)",
     "cadastro": "Cadastro e credenciamento",
     "perfis": "Perfis e funcionalidades",
+    "emendas": "Emendas Parlamentares",
     "mrosc": "MROSC — visão geral",
 }
 # Manual MROSC ponta a ponta de OSC. O link do gov.br dá 401 (restrito), então o
