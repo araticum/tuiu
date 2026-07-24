@@ -159,11 +159,12 @@ depender do regime, diga isso."""
 
 _base_txt: str | None = None
 _base_carga: int | None = None
-# O acervo inteiro dá ~1,32M tokens (português tokeniza a ~2,73 chars/token) e
-# estoura o 1M do V4-Flash. Teto de ~2,1M chars ≈ 770k tokens de base, deixando
-# folga p/ o holofote + pergunta + resposta. O que não couber NÃO some: a busca
-# roda sobre o índice COMPLETO e traz por pergunta. Guia sempre entra (é pequeno).
-BASE_MAX_CHARS = 2_100_000
+# Base MÉDIA (decisão do dono): equilíbrio qualidade × velocidade. ~1,1M chars ≈
+# 400k tokens de base cacheada — a frio ~25s, a quente ~4s (contra 54s/7-25s da
+# base cheia de 770k). O que não cabe NÃO some: a busca roda sobre o índice
+# COMPLETO e traz por pergunta (o holofote backfilla). Guia sempre entra.
+# Português tokeniza a ~2,73 chars/token; V4-Flash tem 1M de contexto.
+BASE_MAX_CHARS = 1_100_000
 
 
 def _base(con) -> str:
