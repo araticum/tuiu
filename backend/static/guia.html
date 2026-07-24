@@ -38,6 +38,10 @@
   .cit{ color:var(--acento); font-size:11px; vertical-align:super }
   .respfoot{ color:var(--dim); font-size:11px; margin-top:9px; border-top:1px solid #1e3a2a; padding-top:6px }
   .fontes{ font-size:11.5px; letter-spacing:.7px; text-transform:uppercase; color:var(--dim); margin:4px 0 7px }
+  #hist{ max-width:900px; margin-bottom:16px; background:var(--card); border:1px solid var(--linha); border-radius:11px; padding:8px 6px }
+  .hitem{ padding:7px 11px; border-radius:8px; cursor:pointer } .hitem:hover{ background:#141d29 }
+  .hitem+.hitem{ border-top:1px solid var(--linha) }
+  .hq{ font-size:13px; color:var(--tx) } .hm{ font-size:11px; color:var(--dim); margin-top:1px }
   .grid{ display:grid; grid-template-columns:250px 1fr; gap:20px; align-items:start; max-width:1200px }
   @media (max-width:900px){ .grid{ grid-template-columns:1fr } }
   .lat{ background:var(--card); border:1px solid var(--linha); border-radius:11px; padding:10px 12px; position:sticky; top:70px }
@@ -67,7 +71,9 @@
 <div class="barra">
   <input id="q" placeholder="Ex.: qual o prazo da prestação de contas? como pago fornecedor por OBTV?" autocomplete="off">
   <button onclick="buscar()">buscar</button>
+  <button onclick="toggleHist()" title="histórico de perguntas e respostas">🕘 histórico</button>
 </div>
+<div id="hist" style="display:none"></div>
 <div class="exemplos">tente:
   <a onclick="ex('qual o prazo para prestação de contas')">prazo da prestação</a>
   <a onclick="ex('o que faço quando a proposta é rejeitada')">proposta rejeitada</a>
@@ -129,6 +135,37 @@ function buscar(){
       </div>`;
     }).join("");
   });
+}
+let histCache = [];
+function toggleHist(){
+  const p = document.getElementById("hist");
+  if(p.style.display==="block"){ p.style.display="none"; return; }
+  p.style.display="block";
+  p.innerHTML = `<div class="vazio" style="padding:10px">carregando…</div>`;
+  fetch("/api/guia/historico?limite=80").then(r=>r.json()).then(d=>{
+    histCache = d.itens||[];
+    if(!histCache.length){ p.innerHTML = `<div class="vazio" style="padding:10px">Nenhuma pergunta registrada ainda.</div>`; return; }
+    p.innerHTML = histCache.map((h,i)=>`
+      <div class="hitem" onclick="verHist(${i})">
+        <div class="hq">${esc(h.pergunta)}</div>
+        <div class="hm">${new Date(h.quando).toLocaleString("pt-BR")}${d.sou_operador&&h.usuario?" · "+esc(h.usuario):""}${h.erro?' · <span style="color:#e35d5d">sem resposta</span>':""}</div>
+      </div>`).join("");
+  });
+}
+function verHist(i){
+  const h = histCache[i];
+  document.getElementById("q").value = h.pergunta;
+  const fontes = (h.fontes||[]).map(f=>{
+    const pag = f.pagina_ini ? `p.${f.pagina_ini}` : "";
+    const pdf = f.id && f.arquivo ? ` · <a href="/api/guia/pdf/${f.id}#page=${f.pagina_ini||1}" target="_blank">abrir PDF ${pag}</a>` : "";
+    return `<div class="hit"><div class="doc">${esc(f.documento||"")}${pdf}</div></div>`;
+  }).join("");
+  document.getElementById("res").innerHTML = (h.resposta
+    ? `<div class="resp">${fmt(h.resposta)}<div class="respfoot">do histórico · ${esc(h.modelo||"")} · ${new Date(h.quando).toLocaleString("pt-BR")}</div></div>`
+    : `<div class="resp aviso">${esc(h.erro||"sem resposta gerada")}</div>`)
+    + (fontes?`<div class="fontes">Fontes</div>${fontes}`:"");
+  document.getElementById("hist").style.display="none";
+  window.scrollTo(0,0);
 }
 document.getElementById("q").addEventListener("keydown", e=>{ if(e.key==="Enter") buscar(); });
 

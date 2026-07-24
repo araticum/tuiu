@@ -562,14 +562,59 @@ def guia_etapas():
         return {"disponivel": False, "erro": str(exc), "etapas": []}
 
 
+def _gravar_historico(request: Request, q: str, r: dict) -> None:
+    """Grava a pergunta+resposta. Nunca derruba a resposta se o insert falhar."""
+    import json as _json
+    u = getattr(request.state, "usuario", None) or {}
+    fontes = [{c: f.get(c) for c in ("id", "fonte", "documento", "etapa", "pagina_ini", "arquivo", "url")}
+              for f in (r.get("fontes") or [])]
+    try:
+        with conectar() as con:
+            con.execute(
+                "INSERT INTO guia_historico (usuario, papel, doc_cliente, pergunta, resposta,"
+                " modelo, fontes, tokens_entrada, tokens_cacheados, tokens_saida, erro)"
+                " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (u.get("login"), u.get("papel"), u.get("doc_cliente"), q, r.get("resposta"),
+                 r.get("modelo"), _json.dumps(fontes, ensure_ascii=False), r.get("tokens_entrada"),
+                 r.get("tokens_cacheados"), r.get("tokens_saida"), r.get("erro")))
+            con.commit()
+    except Exception:  # noqa: BLE001 — histórico é registro, não pode quebrar o chat
+        pass
+
+
 @app.get("/api/guia/perguntar")
-def guia_perguntar(q: str = "", k: int = 6):
-    """Chat do guia (RAG): responde ancorado no acervo, citando a fonte."""
+def guia_perguntar(request: Request, q: str = "", k: int = 6):
+    """Chat do guia: responde ancorado no acervo, cita a fonte, e GRAVA no histórico."""
     try:
         from app.guia import perguntar
-        return {"disponivel": True, **perguntar(q, k=max(3, min(k, 10)))}
+        r = {"disponivel": True, **perguntar(q, k=max(3, min(k, 10)))}
     except Exception as exc:  # noqa: BLE001
-        return {"disponivel": False, "erro": str(exc), "resposta": None, "fontes": []}
+        r = {"disponivel": False, "erro": str(exc), "resposta": None, "fontes": []}
+    if (q or "").strip():
+        _gravar_historico(request, q.strip(), r)
+    return r
+
+
+@app.get("/api/guia/historico")
+def guia_historico(request: Request, limite: int = 60):
+    """Histórico do chat. Operador vê tudo; cliente vê só o dele (RBAC)."""
+    u = request.state.usuario
+    limite = max(1, min(limite, 200))
+    cols = ["id", "quando", "usuario", "papel", "doc_cliente", "pergunta", "resposta",
+            "modelo", "fontes", "tokens_entrada", "tokens_cacheados", "tokens_saida", "erro"]
+    try:
+        with conectar() as con:
+            base = "SELECT " + ", ".join(cols) + " FROM guia_historico"
+            if u.get("papel") == "operador":
+                rows = con.execute(base + " ORDER BY quando DESC LIMIT %s", (limite,)).fetchall()
+            else:
+                rows = con.execute(base + " WHERE usuario=%s ORDER BY quando DESC LIMIT %s",
+                                   (u.get("login"), limite)).fetchall()
+        itens = [dict(zip(cols, [x.isoformat() if hasattr(x, "isoformat") else x for x in r]))
+                 for r in rows]
+        return {"disponivel": True, "itens": itens, "sou_operador": u.get("papel") == "operador"}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "itens": []}
 
 
 @app.get("/api/guia/conteudo")
