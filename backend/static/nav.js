@@ -46,7 +46,8 @@
   var TABS = [["Cockpit", "/"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"],
               ["Inteligência", "/inteligencia.html"], ["Guia", "/guia.html"]];
   var MAIS = [["Agenda de prazos", "/agenda.html"], ["Andamento", "/eventos.html"],
-              ["Notificações", "/notificacoes.html"], ["Normas", "/normas.html"], ["Prestação de contas", "/prestacao.html"]];
+              ["Notificações", "/notificacoes.html"], ["Normas", "/normas.html"],
+              ["Prestação de contas", "/prestacao.html"], ["Uso do guia", "/guia-uso.html"]];
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }

@@ -617,6 +617,43 @@ def guia_historico(request: Request, limite: int = 60):
         return {"disponivel": False, "erro": str(exc), "itens": []}
 
 
+@app.get("/api/guia/metricas")
+def guia_metricas(request: Request):
+    """Telinha do operador: uso do guia — volume, o que mais perguntam, e o custo
+    (tokens → US$, com o desconto do cache). Operador-only."""
+    if request.state.usuario.get("papel") != "operador":
+        raise HTTPException(403, "métricas são do operador")
+    # V4-Flash (DeepInfra): cents/token; cached input = 0,2×
+    CI, CO, CACHE = 9e-6, 1.8e-5, 0.2
+    try:
+        with conectar() as con:
+            tot, sem, hoje = con.execute(
+                "SELECT count(*), count(*) FILTER (WHERE quando > now()-interval '7 days'),"
+                "       count(*) FILTER (WHERE quando >= date_trunc('day', now()))"
+                " FROM guia_historico").fetchone()
+            ent, cac, sai, npg = con.execute(
+                "SELECT coalesce(sum(tokens_entrada),0), coalesce(sum(tokens_cacheados),0),"
+                "       coalesce(sum(tokens_saida),0), count(*) FROM guia_historico"
+                " WHERE quando >= date_trunc('month', now())").fetchone()
+            custo = ((ent - cac) * CI + cac * CI * CACHE + sai * CO) / 100.0
+            top = [{"pergunta": p, "n": n} for p, n in con.execute(
+                "SELECT min(pergunta), count(*) FROM guia_historico"
+                " GROUP BY tuiu_norm(pergunta) ORDER BY 2 DESC, 1 LIMIT 12")]
+            por_user = [{"usuario": u or "—", "papel": pl, "n": n} for u, pl, n in con.execute(
+                "SELECT usuario, min(papel), count(*) FROM guia_historico"
+                " GROUP BY usuario ORDER BY 3 DESC LIMIT 10")]
+            sem_resp = con.execute(
+                "SELECT count(*) FROM guia_historico WHERE resposta IS NULL").fetchone()[0]
+        return {"disponivel": True, "total": tot, "semana": sem, "hoje": hoje,
+                "mes": {"perguntas": npg, "custo_usd": round(custo, 4),
+                        "tokens_entrada": int(ent), "tokens_cacheados": int(cac),
+                        "tokens_saida": int(sai),
+                        "cache_pct": round(100.0 * cac / ent) if ent else 0},
+                "top": top, "por_usuario": por_user, "sem_resposta": sem_resp}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc)}
+
+
 @app.get("/api/guia/conteudo")
 def guia_conteudo():
     """O guia próprio (pipeline completo), para navegar por etapa."""
