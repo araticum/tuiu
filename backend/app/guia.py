@@ -137,7 +137,9 @@ def buscar(q: str, k: int = 8, etapa: str | None = None, papel: str | None = Non
 
 
 DEEPINFRA = os.environ.get("DEEPINFRA_BASE_URL") or "https://api.deepinfra.com/v1/openai"
-MODELO_CHAT = os.environ.get("TUIU_GUIA_MODELO", "deepseek-ai/DeepSeek-V4-Pro")
+# V4-Flash: 1M de contexto (cabe a base cacheada) + cache automático por prefixo
+# (cached 0,2×, write grátis). Trocável por env sem mexer no código.
+MODELO_CHAT = os.environ.get("TUIU_GUIA_MODELO", "deepseek-ai/DeepSeek-V4-Flash")
 
 SISTEMA = """Você é o assistente do Tuiú, que orienta quem executa transferências da \
 União como TERCEIRO (OSC/entidade privada sem fins lucrativos) em parceria com órgão federal.
@@ -155,44 +157,87 @@ a passo, use lista curta.
 depender do regime, diga isso."""
 
 
-def perguntar(q: str, k: int = 6) -> dict:
-    """RAG: recupera no acervo e responde ancorado, citando a fonte.
+_base_txt: str | None = None
+_base_carga: int | None = None
+# O acervo inteiro dá ~1,32M tokens (português tokeniza a ~2,73 chars/token) e
+# estoura o 1M do V4-Flash. Teto de ~2,1M chars ≈ 770k tokens de base, deixando
+# folga p/ o holofote + pergunta + resposta. O que não couber NÃO some: a busca
+# roda sobre o índice COMPLETO e traz por pergunta. Guia sempre entra (é pequeno).
+BASE_MAX_CHARS = 2_100_000
 
-    A recuperação é local e de graça; só a redação da resposta vai à DeepInfra.
-    Sem chave, degrada para os trechos (a busca continua útil) em vez de quebrar.
-    """
+
+def _base(con) -> str:
+    """A base cacheada do modelo: guia inteiro + o quanto do manual couber no teto.
+
+    V4-Flash tem 1M de contexto e cache automático por prefixo (cached = 0,2×,
+    cache-write grátis). A base é um prefixo idêntico a cada chamada: a 1ª paga
+    cheio, as seguintes pagam 20%. Guia primeiro (alto sinal), depois os manuais
+    por módulo/etapa até o teto. Cache em memória; recarrega se o índice mudar."""
+    global _base_txt, _base_carga
+    n = con.execute("SELECT count(*) FROM guia_trechos").fetchone()[0]
+    if _base_txt is not None and _base_carga == n:
+        return _base_txt
+    partes, tot = [], 0
+    for fonte, modulo, etapa, documento, texto in con.execute(
+            "SELECT fonte, modulo, etapa, documento, texto FROM guia_trechos"
+            " ORDER BY (fonte <> 'guia'), modulo, etapa, id"):
+        p = f"[{fonte} · {etapa or modulo} · {documento}]\n{texto}"
+        if fonte != "guia" and tot + len(p) > BASE_MAX_CHARS:
+            continue   # não cabe na base; a recuperação por pergunta cobre
+        partes.append(p)
+        tot += len(p) + 2
+    _base_txt = "\n\n".join(partes)
+    _base_carga = n
+    return _base_txt
+
+
+SISTEMA_CAG = SISTEMA + """
+
+Você recebe ABAIXO o ACERVO COMPLETO (guia próprio + manuais oficiais do
+Transferegov) como sua base de conhecimento. Responda com base nele. Depois do
+acervo vêm as PASSAGENS MAIS RELEVANTES para a pergunta, numeradas — cite-as por
+[n] quando as usar. Se a resposta não estiver no acervo, diga isso."""
+
+
+def perguntar(q: str, k: int = 6) -> dict:
+    """Cache-augmented generation: o acervo inteiro é a base (prefixo cacheado);
+    a recuperação local dá o holofote (passagens numeradas) e as fontes com PDF.
+    Só a redação vai à DeepInfra. Sem chave, degrada para os trechos."""
     q = (q or "").strip()
     if len(q) < 3:
         return {"resposta": None, "erro": "pergunta muito curta", "fontes": []}
     hits = buscar(q, k=k).get("resultados", [])
-    if not hits:
-        return {"resposta": None, "erro": "nada encontrado no acervo", "fontes": []}
-
     chave = os.environ.get("DEEPINFRA_API_KEY")
     if not chave:
         return {"resposta": None, "fontes": hits,
                 "erro": "sem DEEPINFRA_API_KEY — mostrando só os trechos encontrados"}
 
-    contexto = "\n\n".join(
-        f"[{n}] (fonte: {h['fonte']} · etapa: {h.get('etapa') or '—'} · {h['documento']})\n{h['trecho']}"
-        for n, h in enumerate(hits, 1))
+    with conectar() as con:
+        base = _base(con)
+    sistema = SISTEMA_CAG + "\n\n===== ACERVO (base de conhecimento) =====\n" + base
+    holofote = "\n\n".join(
+        f"[{n}] ({h['documento']} · {h.get('etapa') or '—'})\n{h['trecho']}"
+        for n, h in enumerate(hits, 1)) or "(sem passagens em destaque)"
     corpo = json.dumps({
         "model": MODELO_CHAT,
-        "messages": [{"role": "system", "content": SISTEMA},
-                     {"role": "user", "content": f"TRECHOS:\n{contexto}\n\nPERGUNTA: {q}"}],
-        "temperature": 0.2, "max_tokens": 700,
+        "messages": [{"role": "system", "content": sistema},
+                     {"role": "user", "content":
+                      f"PASSAGENS MAIS RELEVANTES (cite por [n]):\n{holofote}\n\nPERGUNTA: {q}"}],
+        "temperature": 0.2, "max_tokens": 900,
     }).encode()
     req = urllib.request.Request(f"{DEEPINFRA}/chat/completions", data=corpo, headers={
         "Authorization": f"Bearer {chave}", "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=90) as r:
+        with urllib.request.urlopen(req, timeout=120) as r:
             d = json.loads(r.read().decode("utf-8", "replace"))
         texto = (d.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
         uso = d.get("usage") or {}
     except Exception as exc:  # noqa: BLE001 — LLM fora do ar não tira a busca do ar
         return {"resposta": None, "fontes": hits, "erro": f"falha na geração: {exc}"}
+    cacheados = (uso.get("prompt_tokens_details") or {}).get("cached_tokens")
     return {"resposta": texto or None, "fontes": hits, "modelo": MODELO_CHAT,
-            "tokens": uso.get("total_tokens")}
+            "tokens": uso.get("total_tokens"), "tokens_entrada": uso.get("prompt_tokens"),
+            "tokens_cacheados": cacheados, "tokens_saida": uso.get("completion_tokens")}
 
 
 def etapas() -> list[dict]:
