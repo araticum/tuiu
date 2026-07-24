@@ -27,21 +27,33 @@ BASE = "https://www.gov.br/transferegov/++api++/pt-br/"
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)", "Accept": "application/json"}
 DESTINO = Path("/mnt/dados-gov/tuiu-manuais")
 
-# Módulos que importam para o terceiro-executor (OSC). Obras/TED/fundo-a-fundo/PAC
-# ficam de fora: não é o que a casa opera.
+# O foco é o universo DISCRICIONÁRIAS/LEGAIS de OSC, nas suas duas faces: convênios
+# (discricionarias, legado PI 424) + o ciclo novo de parcerias MROSC (gestao-de-
+# parcerias, g2/PC 33). Cadastro/perfis são transversais (precisa pra operar
+# qualquer um). FORA: Especiais/Pix (art. 166-A é só de ENTE, não de OSC), Obras,
+# TED, Fundo a Fundo, PAC — não é o que a casa opera.
 MODULOS = {
     "discricionarias": "manuais/transferegov/discricionarias",
     "parcerias": "manuais/transferegov/gestao-de-parcerias",
-    "especiais": "manuais/transferegov/especiais",
     "cadastro": "manuais/transferegov/cadastro",
     "perfis": "manuais/transferegov/perfis-x-funcionalidades",
 }
-# Manual ponta a ponta de OSC — vive fora da árvore de manuais, em legislacao/
+# Nome legível do módulo, usado como ETAPA quando os PDFs vêm SOLTOS (sem
+# subpasta): é o caso de parcerias/especiais/cadastro, onde cada arquivo é filho
+# direto do módulo — sem isso ficariam sem etapa e fora da navegação/filtro.
+MODULO_NOME = {
+    "discricionarias": "Discricionárias e Legais",
+    "parcerias": "Gestão de Parcerias (ciclo novo)",
+    "cadastro": "Cadastro e credenciamento",
+    "perfis": "Perfis e funcionalidades",
+    "mrosc": "MROSC — visão geral",
+}
+# Manual MROSC ponta a ponta de OSC. O link do gov.br dá 401 (restrito), então o
+# PDF é PRÉ-COLOCADO no acervo pelo dono; aqui só catalogamos (não baixa).
 AVULSOS = [{
-    "modulo": "mrosc", "etapa": "Visão geral",
+    "modulo": "mrosc", "etapa": "MROSC — visão geral", "papel": "convenente",
     "titulo": "Manual MROSC — Do Planejamento à Prestação de Contas",
-    "url": "https://www.gov.br/transferegov/pt-br/legislacao/portarias/"
-           "MANUALMROSCDoPlanejamentoPrestaodeContasreduzido13082025.pdf",
+    "arquivo": str(DESTINO / "mrosc" / "Manual_MROSC_Do_Planejamento_a_Prestacao_de_Contas.pdf"),
 }]
 
 
@@ -82,8 +94,10 @@ def catalogar(modulo: str, path: str, etapa: str = "", prof: int = 0,
         if "pdf" not in (f.get("content-type") or ""):
             return []
         titulo = d.get("title") or path.rsplit("/", 1)[-1]
-        return [{"modulo": modulo, "etapa": etapa, "titulo": titulo,
-                 "papel": _papel(titulo), "url": f.get("download"),
+        # sem subpasta (arquivo solto no módulo), a etapa cai no nome do módulo —
+        # senão parcerias/cadastro ficariam sem etapa, fora da navegação e do filtro
+        return [{"modulo": modulo, "etapa": etapa or MODULO_NOME.get(modulo, modulo),
+                 "titulo": titulo, "papel": _papel(titulo), "url": f.get("download"),
                  "bytes_esperado": f.get("size") or 0}]
     saida = []
     for i in d.get("items") or []:
@@ -95,6 +109,13 @@ def catalogar(modulo: str, path: str, etapa: str = "", prof: int = 0,
 
 
 def baixar(item: dict) -> dict:
+    # arquivo PRÉ-COLOCADO no acervo (ex.: MROSC, cujo link do gov.br dá 401) —
+    # não baixa, só confirma que está no disco.
+    ja = item.get("arquivo")
+    if ja and Path(ja).exists():
+        item["bytes"] = Path(ja).stat().st_size
+        item["pulado"] = True
+        return item
     alvo = DESTINO / item["modulo"] / _slug(item.get("etapa") or "geral")
     alvo.mkdir(parents=True, exist_ok=True)
     arq = alvo / (_slug(item["titulo"]).removesuffix(".pdf") + ".pdf")
