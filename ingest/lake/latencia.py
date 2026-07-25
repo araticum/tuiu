@@ -26,6 +26,9 @@ sys.path.insert(0, str(RAIZ / "backend"))
 
 LAKE = "/mnt/dados-gov/transferegov-lake/lake.duckdb"
 CORTE = "DATE '2023-09-01'"
+# Piso de recência: a demora do órgão HOJE não se prevê pela prática pré-2021
+# (Danilo, especialista, 07/2026). Corta a proposta pela data de envio.
+PISO = "DATE '2021-01-01'"
 LIMITE_ART97 = 60            # dias, art.97 informatizado (Transferegov é informatizado)
 MIN_PREDITIVO = 100
 MIN_LINHA = 50               # mediana precisa de massa
@@ -56,6 +59,7 @@ dur AS (
   FROM t0 JOIN t1 USING (id_proposta)
   JOIN proposta p ON p.id_proposta = t0.id_proposta
   WHERE p.natureza_juridica = 'Organização da Sociedade Civil' AND p.desc_orgao_sup IS NOT NULL
+    AND try_strptime(p.dia_proposta,'%d/%m/%Y') >= {PISO}
     AND date_diff('day', t0.ini, t1.fim) BETWEEN 0 AND 3650
 )
 SELECT regime, orgao, count(*) n,

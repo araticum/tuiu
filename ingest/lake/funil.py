@@ -27,6 +27,10 @@ sys.path.insert(0, str(RAIZ / "backend"))
 
 LAKE = "/mnt/dados-gov/transferegov-lake/lake.duckdb"
 CORTE = "DATE '2023-09-01'"   # Decreto 11.531 + PC 33/2023
+# Piso de recência: o funil responde "a qual órgão levo a proposta HOJE", então
+# comportamento pré-2021 é ruído histórico, não previsão (Danilo, especialista,
+# 07/2026). O desfecho (morte) NÃO leva piso — ali a história é o dado.
+PISO = "DATE '2021-01-01'"
 MIN_PREDITIVO = 100           # abaixo disso a taxa é ruído
 MIN_LINHA = 30               # não emite órgão com menos que isso resolvido
 
@@ -47,6 +51,7 @@ WITH prop AS (
     WHERE p.natureza_juridica = 'Organização da Sociedade Civil'
       AND p.desc_orgao_sup IS NOT NULL
       AND try_strptime(p.dia_proposta,'%d/%m/%Y') IS NOT NULL
+      AND try_strptime(p.dia_proposta,'%d/%m/%Y') >= {PISO}
 ),
 cls AS (
     SELECT orgao, regime,

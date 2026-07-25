@@ -21,7 +21,7 @@ import funil  # noqa: E402
 import funil_acao  # noqa: E402
 import latencia  # noqa: E402
 
-LEGADO = "01/01/2015"   # antes do corte 2023-09-01
+LEGADO = "15/06/2022"   # regime legado (< corte 2023-09-01) mas pós-piso 2021
 NOVO = "01/06/2024"     # depois do corte
 
 
@@ -123,6 +123,18 @@ def test_funil_regime_novo_e_preditivo_pela_data_da_proposta():
     _prop(con, 2, "MIN G", dia=NOVO, sit="Aprovados")
     regimes = {r[1] for r in funil.computar_em(con, min_linha=1)}
     assert regimes == {"legado_pi424", "novo_pc33"}
+
+
+def test_funil_piso_2021_ignora_pre_2021():
+    """Proposta anterior a 2021 é ruído histórico, não previsão (Danilo, 07/2026):
+    o funil só conta 2021+, então prática velha não infla nem cria linha."""
+    con = _con()
+    _prop(con, 1, "MIN H", dia="01/01/2019", sit="Aprovados")   # pré-piso: fora
+    _prop(con, 2, "MIN H", dia="15/06/2022", sit="Rejeitados")  # 2021+: entra
+    linhas = funil.computar_em(con, min_linha=1)
+    assert len(linhas) == 1, "só o órgão com proposta 2021+ aparece"
+    orgao, regime, n_total, n_res, apr, rep, curso = linhas[0]
+    assert (n_total, rep) == (1, 100.0), "a de 2019 não entra na conta — só a de 2022"
 
 
 # -------------------------------------------------------------------- latência
