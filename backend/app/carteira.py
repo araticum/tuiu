@@ -62,6 +62,20 @@ def docs_ativos() -> set[str]:
         return set()
 
 
+def nomes_carteira() -> dict[str, str]:
+    """Nome de exibição por CNPJ, da tabela `clientes` (a fonte com os nomes
+    reais dos 50 monitorados). O recorte do legado não traz razão social, então
+    sem isto a carteira aparecia intitulada por CNPJ (Danilo, 07/2026). Degrada
+    para {} sem banco — o chamador cai no rótulo/ nome do recorte."""
+    try:
+        from app.db import conectar
+        with conectar() as con:
+            return {d: (ap or nm) for d, ap, nm in con.execute(
+                "SELECT doc, apelido, nome FROM clientes WHERE ativo")}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _data_br(s: str | None) -> date | None:
     try:
         return datetime.strptime((s or "").strip(), "%d/%m/%Y").date()
@@ -115,13 +129,16 @@ def listar_entes() -> dict:
     snap = snapshot_mais_recente()
     if snap is None:
         return {"snapshot": None, "entes": []}
+    nomes = nomes_carteira()
     entes = []
     for sub in sorted(snap.iterdir()):
         cj = sub / "carteira.json"
         if not (sub.is_dir() and cj.exists()):
             continue
         carteira = json.loads(cj.read_text(encoding="utf-8"))
-        carteira["rotulo"] = ROTULOS.get(carteira.get("cnpj", sub.name), carteira.get("nome"))
+        cnpj = carteira.get("cnpj", sub.name)
+        # nome real (clientes) > rótulo de teste (ROTULOS) > nome do recorte > CNPJ
+        carteira["rotulo"] = nomes.get(cnpj) or ROTULOS.get(cnpj) or carteira.get("nome") or cnpj
         carteira["legado"] = _legado(sub)
         reg = sub / "regularidade.json"
         carteira["regularidade"] = (

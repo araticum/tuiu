@@ -36,10 +36,14 @@ def _eventos_por_ente(con) -> dict[str, list]:
 
 
 def _prioridades(con, limite: int = 15) -> list[dict]:
+    # "Agir agora" = só o que o CONVENENTE pode resolver. O que espera decisão do
+    # concedente (proposta parada, parcela não liberada, análise atrasada) é
+    # acompanhamento, não prioridade — fica de fora daqui (Danilo, 07/2026).
     cols = ["cnpj", "ente", "tipo", "instrumento", "data_limite", "descricao", "base_legal", "farol"]
     rows = con.execute(
         "SELECT cnpj, ente, tipo, instrumento, data_limite, descricao, base_legal, farol"
         " FROM marcos WHERE farol IN ('acao_imediata','vencido')"
+        "   AND COALESCE(detalhes->>'bola_com','convenente') <> 'concedente'"
         " ORDER BY CASE farol WHEN 'acao_imediata' THEN 0 ELSE 1 END, data_limite NULLS FIRST"
         " LIMIT %s", (limite,)).fetchall()
     return [dict(zip(cols, r)) for r in rows]

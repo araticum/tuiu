@@ -158,11 +158,15 @@ def recorte(tmp_path):
     return tmp_path
 
 
-def test_proposta_parada_escala_por_tempo(recorte):
+def test_proposta_parada_e_sempre_do_orgao(recorte):
+    """Proposta parada é cobrança do concedente — acompanhamento, nunca 'agir
+    agora' por mais tempo que fique parada (regra do especialista, 07/2026): a
+    bola é do órgão, então não escala à emergência do cliente."""
     marcos = _marcos_g2("00000000000000", "Teste", recorte, date.today())
     paradas = {m["detalhes"]["dias_em_analise"]: m for m in marcos if m["tipo"] == "proposta_parada"}
-    assert 200 in paradas and paradas[200]["farol"] == "acao_imediata", ">=180 dias exige ação imediata"
-    assert 70 in paradas and paradas[70]["farol"] == "atencao", ">=60 dias é atenção"
+    assert 200 in paradas and paradas[200]["farol"] == "atencao", "bola do órgão não vira emergência do cliente"
+    assert 70 in paradas and paradas[70]["farol"] == "atencao", ">=60 dias vira marco de cobrança"
+    assert paradas[200]["detalhes"]["bola_com"] == "concedente"
     assert 10 not in paradas, "10 dias em análise é normal e não vira marco"
 
 

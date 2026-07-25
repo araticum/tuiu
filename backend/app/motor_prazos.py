@@ -48,7 +48,8 @@ def _farol(limite: date | None, hoje: date) -> str:
     return "vencido" if dias < 0 else ("atencao" if dias <= 90 else "ok")
 
 
-def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> list[dict]:
+def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date,
+                   regras: dict | None = None) -> list[dict]:
     conv_csv = dir_cnpj / "legado" / "convenio.csv"
     if not conv_csv.exists():
         return []
@@ -70,9 +71,12 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
 
                     limite_pc = fim_vig + timedelta(days=int(regra["valor"]["dias"]))
                     base_pc = regra["base_legal"]
-            if limite_pc:
-                situacao = (row.get("SIT_CONVENIO") or "").strip()
-                com_o_cliente = _bola_com_o_convenente(situacao)
+            situacao = (row.get("SIT_CONVENIO") or "").strip()
+            fase = _fase_prestacao(situacao, regras)
+            # Sem fase de prestação (plano/assinatura ou situação em branco) NÃO
+            # há marco: o limite herdado do detru ali não é trabalho de ninguém.
+            if limite_pc and fase:
+                com_o_cliente = fase == "convenente"
                 marcos.append({
                     "cnpj": cnpj, "ente": ente, "fonte": "legado", "instrumento": nr,
                     "tipo": "prestacao_contas" if com_o_cliente else "prestacao_em_analise",
@@ -84,7 +88,7 @@ def _marcos_legado(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date) -> lis
                     # entregue, o atraso é da análise, não do convenente
                     "farol": _farol(limite_pc, hoje) if com_o_cliente else "ok",
                     "detalhes": {"regime": regime, "fim_vigencia": row.get("DIA_FIM_VIGENC_CONV"),
-                                 "situacao": situacao, "bola_com": "convenente" if com_o_cliente else "concedente"},
+                                 "situacao": situacao, "bola_com": fase},
                 })
             if fim_vig and fim_vig >= hoje:
                 marcos.append({
@@ -150,7 +154,7 @@ def _marco_analise_parada(con, cnpj: str, ente: str, dir_cnpj: Path, hoje: date)
                       f"(instrumento {pior['instrumento']}, desde {pior['desde']})"),
         "base_legal": f"{base} — o prazo de análise é do órgão, não do convenente",
         "farol": "atencao",
-        "detalhes": {"limite_dias": limite, "total": len(paradas),
+        "detalhes": {"limite_dias": limite, "total": len(paradas), "bola_com": "concedente",
                      "alem_da_prorrogacao": len(alem_da_prorrogacao),
                      "piores": paradas[:10]},
     }]
@@ -269,7 +273,9 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date, con=None) -> list[di
                          f" ({c.get('origem_recurso') or '—'})".replace(",", "X").replace(".", ",").replace("X", "."),
             "base_legal": "cronograma de desembolso pactuado (Transferegov)",
             "farol": _farol(venc, hoje),
-            "detalhes": {"proposta": p.get("id_proposta"), "situacao": p.get("situacao_proposta")},
+            # liberar a parcela é do concedente: parcela atrasada é cobrança, não agir-agora
+            "detalhes": {"proposta": p.get("id_proposta"), "situacao": p.get("situacao_proposta"),
+                         "bola_com": "concedente"},
         })
 
     # Último parecer de cada proposta. O arquivo `analise-proposta` é coletado
@@ -319,8 +325,11 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date, con=None) -> list[di
                                   + (f" (último parecer: {ultimo['resultado']} na fase "
                                      f"{ultimo['fase']})" if ultimo else "")),
                     "base_legal": f"{base_inf} — o prazo de análise é do concedente, não do proponente",
-                    "farol": "acao_imediata" if dias >= limite_conv else "atencao",
+                    # a bola é do ÓRGÃO: cobrar é acompanhamento, não "agir agora"
+                    # (Danilo, 07/2026). Fica em 'atencao' por mais parada que esteja.
+                    "farol": "atencao",
                     "detalhes": {"dias_em_analise": dias, "limite_informatizado": limite_inf,
+                                 "limite_convencional": limite_conv, "bola_com": "concedente",
                                  "vencido_ha_dias": vencido_ha, "objeto": (p.get("ds_objeto") or "")[:120],
                                  "ultimo_parecer": ultimo},
                 })
@@ -376,30 +385,64 @@ def _sem_acento(s: str) -> str:
                    if unicodedata.category(c) != "Mn").lower().strip()
 
 
-# Estágios em que a prestação JÁ FOI ENTREGUE e a bola está com o concedente.
-_EM_ANALISE = ("para analise", "em analise", "aprovada", "comprovada", "arquivada")
+# Classificação da fase de prestação de contas pela SIT_CONVENIO do detru.
+# É ALLOWLIST, não blocklist: fora das listas conhecidas NÃO se inventa prazo de
+# prestação. A blocklist antiga (default "cobrar") transformava plano recém
+# aprovado (94), situação em branco (79) e complementação de PLANO em análise
+# (7) em "prestação vencida" — 181 de 294 alarmes vermelhos eram falsos na
+# carteira de 50 (feedback do Danilo, especialista, 07/2026).
+_PC_CONVENENTE = (            # o cliente ainda tem ação de prestação pendente
+    "em execucao",           # executando: prazo se aproximando é aviso legítimo
+    "aguardando prestacao de contas",
+    "prestacao de contas em complementacao",
+    "prestacao de contas iniciada por antecipacao",
+)
+_PC_CONCEDENTE = (           # prestação entregue: a bola está com o órgão
+    "prestacao de contas enviada",
+    "prestacao de contas em analise",
+    "prestacao de contas comprovada",
+    "prestacao de contas aprovada",
+    "prestacao de contas arquivada",
+)
 
 
-def _bola_com_o_convenente(situacao: str | None) -> bool:
-    """True quando o CLIENTE ainda tem o que fazer na prestação de contas.
+def carregar_regras_situacao(con=None) -> dict:
+    """Regras de classificação da situação, EDITÁVEIS POR ADMIN (regras_situacao).
 
-    Sem esta distinção o motor acusa atraso de quem cumpriu: na carteira de 50,
-    **1.004 dos 1.301 "vencidos" eram prestações já entregues** aguardando
-    análise do governo. Alarme falso em 77% dos casos destrói a confiança no
-    produto inteiro — pior do que não avisar.
+    Fallback para as listas embutidas se a tabela estiver vazia/ausente/sem banco
+    — o motor nunca fica sem classificar (nem os testes de unidade)."""
+    base = {"convenente": list(_PC_CONVENENTE), "concedente": list(_PC_CONCEDENTE), "ignorar": []}
+    if con is None:
+        return base
+    try:
+        rows = con.execute("SELECT fase, padrao FROM regras_situacao WHERE ativo").fetchall()
+    except Exception:  # noqa: BLE001 — tabela ainda não migrada: usa o embutido
+        return base
+    if not rows:
+        return base
+    out = {"convenente": [], "concedente": [], "ignorar": []}
+    for fase, padrao in rows:
+        out.setdefault(fase, []).append(_sem_acento(padrao))
+    return out
 
-    O casamento é deliberadamente estreito: só situação DE PRESTAÇÃO conta como
-    entregue. "Proposta/Plano de Trabalho Aprovado" contém "aprovado", mas é o
-    plano que foi aprovado, não a prestação — ali o prazo vencido é real.
-    """
+
+def _fase_prestacao(situacao: str | None, regras: dict | None = None) -> str | None:
+    """De quem é a bola da prestação de contas — ou None quando não há prestação
+    em cena (ainda em plano/assinatura, ou situação em branco).
+
+    Precedência: ignorar (silêncio explícito do admin) > convenente > concedente.
+    None é deliberado: convênio que nem saiu da fase de plano herda um
+    DIA_LIMITE_PREST_CONTAS antigo que não é trabalho de ninguém hoje — emitir
+    marco vencido ali era a origem do alarme falso que corrói a confiança."""
+    r = regras or {"convenente": _PC_CONVENENTE, "concedente": _PC_CONCEDENTE, "ignorar": ()}
     s = _sem_acento(situacao)
-    if not s:
-        return True   # sem situação declarada, cobrar é o lado seguro
-    if "prestacao de contas" not in s:
-        return True   # ainda não chegou na fase de prestação
-    if "complementacao" in s:
-        return True   # devolvida para complementar: a bola volta pro cliente
-    return not any(t in s for t in _EM_ANALISE)
+    if any(t in s for t in r.get("ignorar", ())):
+        return None
+    if any(t in s for t in r.get("convenente", ())):
+        return "convenente"
+    if any(t in s for t in r.get("concedente", ())):
+        return "concedente"
+    return None
 
 
 def gerar_marcos(hoje: date | None = None) -> dict:
@@ -413,6 +456,7 @@ def gerar_marcos(hoje: date | None = None) -> dict:
         # trocado) deixa o diretório para trás e continuaria gerando marco e
         # alerta para sempre — fila do operador cheia de quem não é cliente.
         ativos = docs_ativos()
+        regras_sit = carregar_regras_situacao(con)   # classificação editável por admin, 1 leitura por rodada
         ignorados = 0
         for sub in sorted(snap.iterdir()):
             cj = sub / "carteira.json"
@@ -424,7 +468,7 @@ def gerar_marcos(hoje: date | None = None) -> dict:
                 ignorados += 1
                 continue
             ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
-            todos += _marcos_legado(con, cnpj, ente, sub, hoje)
+            todos += _marcos_legado(con, cnpj, ente, sub, hoje, regras_sit)
             todos += _marco_analise_parada(con, cnpj, ente, sub, hoje)
             todos += _marcos_g2(cnpj, ente, sub, hoje, con)     # ciclo novo: o que serve ao terceiro
             todos += _marcos_especiais(con, cnpj, ente, carteira, hoje)
