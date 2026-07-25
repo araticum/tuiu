@@ -142,7 +142,8 @@ def sessao_valida(token: str | None) -> dict | None:
     try:
         with conectar() as con:
             r = con.execute(
-                "SELECT s.login, u.nome, u.trocar_senha, u.papel, u.doc_cliente FROM sessoes s"
+                "SELECT s.login, u.nome, u.trocar_senha, u.papel, u.doc_cliente,"
+                "       COALESCE(u.admin, false) FROM sessoes s"
                 " JOIN usuarios u ON u.login = s.login"
                 " WHERE s.token=%s AND s.expira_em > now() AND u.ativo", (token,)).fetchone()
     except Exception:  # noqa: BLE001 — banco fora do ar NÃO libera o console
@@ -150,7 +151,14 @@ def sessao_valida(token: str | None) -> dict | None:
     if not r:
         return None
     return {"login": r[0], "nome": r[1], "trocar_senha": r[2],
-            "papel": r[3], "doc_cliente": r[4]}
+            "papel": r[3], "doc_cliente": r[4], "admin": bool(r[5])}
+
+
+def e_admin(usuario: dict | None) -> bool:
+    """Admin = operador com o flag `admin` (Pedro, Danilo). Configura a
+    plataforma (situações, ações); operador comum apenas opera. Fail-closed:
+    sem usuário ou sem flag, não é admin."""
+    return bool(usuario and usuario.get("papel") == "operador" and usuario.get("admin"))
 
 
 def escopo(usuario: dict | None) -> set[str] | None:

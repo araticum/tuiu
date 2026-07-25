@@ -49,6 +49,19 @@ def _clientes(con) -> dict[str, dict]:
             for r in con.execute("SELECT doc, nome, apelido, operador, ativo FROM clientes")}
 
 
+def _acoes(con) -> dict[str, str]:
+    """Próximo passo por tipo de marco, EDITÁVEL POR ADMIN (regras_acao) sobre o
+    padrão embutido. Sem tabela/banco, cai no dicionário PROXIMO_PASSO."""
+    acoes = dict(PROXIMO_PASSO)
+    try:
+        for tipo, passo in con.execute("SELECT tipo, proximo_passo FROM regras_acao"):
+            if passo:
+                acoes[tipo] = passo
+    except Exception:  # noqa: BLE001 — tabela ainda não migrada: usa o embutido
+        pass
+    return acoes
+
+
 def montar(apenas_abertos: bool = True, cliente: str | None = None,
            apenas_clientes: bool = True) -> dict:
     """Console do operador: por padrão mostra só a carteira de CLIENTES
@@ -58,6 +71,7 @@ def montar(apenas_abertos: bool = True, cliente: str | None = None,
 
     with conectar() as con:
         clientes = _clientes(con)
+        acoes = _acoes(con)
         status = {r[0]: {"status": r[1], "nota": r[2], "operador": r[3]}
                   for r in con.execute("SELECT chave, status, nota, operador FROM fila_status")}
 
@@ -79,7 +93,7 @@ def montar(apenas_abertos: bool = True, cliente: str | None = None,
                 "prazo": limite.isoformat() if limite else None,
                 "dias": (limite - hoje).days if limite else None,
                 "descricao": desc, "base_legal": base,
-                "proximo_passo": PROXIMO_PASSO.get(tipo, "Analisar"),
+                "proximo_passo": acoes.get(tipo, "Analisar"),
             })
 
         # 2) andamento não tratado
@@ -101,7 +115,7 @@ def montar(apenas_abertos: bool = True, cliente: str | None = None,
                 "prazo": None, "dias": None,
                 "descricao": f"{rotulo}: {transicao}".strip(": "),
                 "base_legal": "andamento no Transferegov" + (" (e-mail do órgão)" if origem == "inbox" else " (dados abertos D-1)"),
-                "proximo_passo": PROXIMO_PASSO["andamento"],
+                "proximo_passo": acoes.get("andamento", "Analisar"),
             })
 
     # 3) impedimento nos cadastros (lê o artefato do recorte)
@@ -125,7 +139,7 @@ def montar(apenas_abertos: bool = True, cliente: str | None = None,
                 "urgencia": "acao_imediata", "tipo": "impedimento_cadastro",
                 "referencia": fontes, "prazo": None, "dias": None,
                 "descricao": f"Cliente IMPEDIDO em {fontes}", "base_legal": r.get("base_legal", ""),
-                "proximo_passo": PROXIMO_PASSO["impedimento_cadastro"],
+                "proximo_passo": acoes.get("impedimento_cadastro", "Analisar"),
             })
 
     for it in itens:
