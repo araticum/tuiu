@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tuiú · Guia</title>
+<title>Tuiú · Guia interativo</title>
 <style>
   :root { --bg:#0b1017; --card:#121a26; --linha:#1e2a3a; --tx:#dbe6f4; --dim:#8ba3bf;
           --ok:#2fbf71; --at:#e8b93c; --ruim:#e35d5d; --acao:#ff7a59; --acento:#4da3ff; }
@@ -49,30 +49,15 @@
   .proclog{ font-size:11.5px; color:var(--dim); margin-top:3px; font-family:ui-monospace,Consolas,monospace }
   .proctimer{ font-variant-numeric:tabular-nums; color:var(--acento); font-weight:600; font-size:15px; flex:0 0 auto; min-width:42px; text-align:right }
   .barra button:disabled{ opacity:.55; cursor:default }
-  .grid{ display:grid; grid-template-columns:250px 1fr; gap:20px; align-items:start; max-width:1200px }
-  @media (max-width:900px){ .grid{ grid-template-columns:1fr } }
-  .lat{ background:var(--card); border:1px solid var(--linha); border-radius:11px; padding:10px 12px; position:sticky; top:70px }
-  .lat a{ display:block; padding:4px 0; font-size:12.7px; color:var(--tx) }
-  .lat a:hover{ color:var(--acento); text-decoration:none }
-  .lat .n{ color:var(--dim); font-size:11px }
-  .sec{ background:var(--card); border:1px solid var(--linha); border-radius:12px; padding:15px 18px; margin-bottom:13px }
-  .sec h2{ font-size:16px; margin-bottom:6px } .sec h3{ font-size:12px; letter-spacing:.7px;
-        text-transform:uppercase; color:var(--dim); margin:12px 0 5px }
-  .sec p{ font-size:13.3px } .sec li{ font-size:13.2px; margin:3px 0 3px 16px }
-  .prazo{ border-left:3px solid var(--at); background:#1a1608; padding:7px 11px; border-radius:6px; margin:5px 0; font-size:12.8px }
-  .prazo b{ color:var(--at) } .prazo .bl{ color:var(--dim); font-size:11.5px }
-  .arm{ border-left:3px solid var(--ruim); padding:5px 11px; margin:4px 0; font-size:12.8px; color:#e7c3c3 }
-  .faz{ border-left:3px solid var(--ok); background:#0c1a12; padding:8px 11px; border-radius:6px; margin-top:9px; font-size:12.8px }
-  .faz b{ color:var(--ok) }
   .vazio{ color:var(--dim) }
 </style>
 </head>
 <body>
-<header><h1>Guia <small>gestão das transferências — pipeline completo</small></h1></header>
+<header><h1>Guia interativo <small>pergunte em linguagem natural</small></h1></header>
 <div class="porque">
-  <b>94 manuais oficiais</b> do Transferegov (gov.br) indexados na íntegra + o <b>guia próprio</b> do pipeline.
-  Pergunte em linguagem natural: a busca é <b>híbrida</b> (semântica + termo exato). O guia responde
-  <i>o que é / o que fazer / qual o prazo</i>; o manual oficial mostra <i>como fazer</i>, e você abre o PDF na página certa.
+  Pergunte qualquer coisa sobre a gestão das transferências. A resposta vem <b>ancorada</b> no acervo
+  (94 manuais oficiais do Transferegov + o guia do pipeline), citando a fonte e abrindo o PDF na página certa.
+  Prefere ler o passo a passo? Veja as <a href="/instrucoes.html">Instruções completas do pipeline →</a>
 </div>
 
 <div class="barra">
@@ -89,11 +74,6 @@
   <a onclick="ex('quem tem o prazo da análise')">de quem é o prazo</a>
 </div>
 <div class="res" id="res"></div>
-
-<div class="grid">
-  <aside class="lat" id="lat"></aside>
-  <main id="guia"><div class="vazio">carregando o guia…</div></main>
-</div>
 
 <script>
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -203,30 +183,6 @@ function verHist(i){
   window.scrollTo(0,0);
 }
 document.getElementById("q").addEventListener("keydown", e=>{ if(e.key==="Enter") buscar(); });
-
-fetch("/api/guia/conteudo").then(r=>r.json()).then(g=>{
-  const main = document.getElementById("guia");
-  if(!g.disponivel){ main.innerHTML = `<div class="vazio">guia indisponível: ${esc(g.erro)}</div>`; return; }
-  const secs = g.secoes||[];
-  document.getElementById("lat").innerHTML =
-    `<div class="n" style="margin-bottom:6px">ETAPAS DO PIPELINE</div>`
-    + secs.map((s,i)=>`<a href="#s${i}">${esc(s.etapa)}</a>`).join("")
-    + `<div class="n" style="margin-top:10px">${esc(g.regimes.length)} regimes · acervo oficial indexado</div>`;
-  main.innerHTML = `<div class="sec"><h2>Regimes — descubra qual é o seu</h2>
-      ${g.regimes.map(r=>`<div class="prazo"><b>${esc(r.nome)}</b> — ${esc(r.quando)}<div class="bl">${esc(r.nota)}</div></div>`).join("")}
-      <p style="color:var(--dim);font-size:12.3px;margin-top:8px">${esc(g.aviso)}</p></div>`
-    + secs.map((s,i)=>`
-    <div class="sec" id="s${i}">
-      <h2>${esc(s.etapa)}</h2>
-      <p>${esc(s.o_que_e)}</p>
-      ${(s.o_que_fazer||[]).length?`<h3>O que fazer</h3><ul>${s.o_que_fazer.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
-      ${(s.prazos||[]).length?`<h3>Prazos e base legal</h3>${s.prazos.map(p=>
-         `<div class="prazo"><b>${esc(p.prazo)}</b> — ${esc(p.o_que)}
-            <div class="bl">${esc(p.base_legal)} · prazo do <b style="color:${p.de_quem==='concedente'?'#4da3ff':'#e8b93c'}">${esc(p.de_quem)}</b></div></div>`).join("")}`:""}
-      ${(s.armadilhas||[]).length?`<h3>Armadilhas</h3>${s.armadilhas.map(a=>`<div class="arm">⚠ ${esc(a)}</div>`).join("")}`:""}
-      ${s.tuiu_faz?`<div class="faz"><b>O que o Tuiú faz por você:</b> ${esc(s.tuiu_faz)}</div>`:""}
-    </div>`).join("");
-});
 </script>
 <script src="/nav.js" defer></script>
 </body>

@@ -18,6 +18,73 @@ RAIZ = Path(__file__).resolve().parents[2]
 BASE = RAIZ / "data" / "dossies"
 
 
+# --------------------------------------------------------- checklist do dossiê
+# Catálogo canônico do dossiê de prestação de contas — as categorias da planilha
+# do Danilo. É status (feito/não), não upload: rastreio manual do que a OSC já
+# reuniu, já que o Transferegov não expõe isso. O % da Mesa sai daqui.
+ITENS_DOSSIE = [
+    ("plano_trabalho", "Plano de trabalho aprovado + termo e aditivos"),
+    ("contratos", "Contratos com fornecedores / processo de contratação"),
+    ("notas_fiscais", "Notas fiscais e comprovantes de despesa"),
+    ("pagamentos_obtv", "Comprovantes de pagamento (OBTV / ordens bancárias)"),
+    ("extratos", "Extratos bancários da conta específica"),
+    ("conciliacao", "Conciliação bancária e rendimentos de aplicação"),
+    ("relatorio_objeto", "Relatório de cumprimento do objeto"),
+    ("devolucao_saldo", "Comprovante de devolução de saldo (se houver)"),
+]
+_ITENS_MAP = dict(ITENS_DOSSIE)
+
+
+def checklist_estado(cnpj: str, instrumento: str) -> dict:
+    """Os itens do dossiê e o que já foi marcado como feito, para um convênio."""
+    from app.db import conectar
+    doc = "".join(c for c in cnpj if c.isdigit())
+    marcado: dict[str, dict] = {}
+    with conectar() as con:
+        for item, feito, nota, por, quando in con.execute(
+                "SELECT item, feito, nota, marcado_por, marcado_em FROM dossie_checklist"
+                " WHERE cnpj=%s AND instrumento=%s", (doc, str(instrumento))):
+            marcado[item] = {"feito": feito, "nota": nota, "por": por,
+                             "quando": quando.isoformat() if quando else None}
+    itens = [{"item": k, "rotulo": r, **{"feito": False, "nota": None},
+              **marcado.get(k, {})} for k, r in ITENS_DOSSIE]
+    n = sum(1 for i in itens if i["feito"])
+    return {"cnpj": doc, "instrumento": str(instrumento), "itens": itens,
+            "feitos": n, "total": len(ITENS_DOSSIE),
+            "pct": round(100 * n / len(ITENS_DOSSIE)) if ITENS_DOSSIE else 0}
+
+
+def marcar_item(cnpj: str, instrumento: str, item: str, feito: bool, por: str | None) -> dict:
+    from app.db import conectar
+    if item not in _ITENS_MAP:
+        return {"ok": False, "erro": "item de dossiê desconhecido"}
+    doc = "".join(c for c in cnpj if c.isdigit())
+    if not doc or not instrumento:
+        return {"ok": False, "erro": "informe cnpj e instrumento"}
+    with conectar() as con:
+        con.execute(
+            "INSERT INTO dossie_checklist (cnpj, instrumento, item, feito, marcado_por, marcado_em)"
+            " VALUES (%s,%s,%s,%s,%s, now())"
+            " ON CONFLICT (cnpj, instrumento, item)"
+            " DO UPDATE SET feito=EXCLUDED.feito, marcado_por=EXCLUDED.marcado_por, marcado_em=now()",
+            (doc, str(instrumento), item, bool(feito), por))
+        con.commit()
+    return {"ok": True, **checklist_estado(doc, instrumento)}
+
+
+def percentuais(con) -> dict[tuple, dict]:
+    """{(cnpj, instrumento): {feitos,total,pct}} para a Mesa. Só convênios com
+    ao menos uma marca aparecem; os demais são 0% (sem linha)."""
+    total = len(ITENS_DOSSIE)
+    out: dict[tuple, dict] = {}
+    for cnpj, instr, n in con.execute(
+            "SELECT cnpj, instrumento, count(*) FILTER (WHERE feito)"
+            " FROM dossie_checklist GROUP BY 1,2"):
+        out[(cnpj, instr)] = {"feitos": n, "total": total,
+                              "pct": round(100 * n / total) if total else 0}
+    return out
+
+
 def _pasta(cnpj: str, instrumento: str) -> Path:
     doc = "".join(c for c in cnpj if c.isdigit())
     seguro = "".join(c for c in str(instrumento) if c.isalnum() or c in "-_.")[:60] or "sem-numero"

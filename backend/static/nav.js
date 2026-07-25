@@ -43,11 +43,12 @@
     + "#tuiunav .drop a:hover{background:#141d29}"
     + "@media(max-width:860px){#tuiunav .tab.sec{display:none}#tuiunav .busca input{width:120px}#tuiunav .busca input:focus{width:170px}}";
 
-  var TABS = [["Cockpit", "/"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"],
-              ["Inteligência", "/inteligencia.html"], ["Guia", "/guia.html"]];
-  var MAIS = [["Agenda de prazos", "/agenda.html"], ["Andamento", "/eventos.html"],
-              ["Notificações", "/notificacoes.html"], ["Normas", "/normas.html"],
-              ["Prestação de contas", "/prestacao.html"], ["Uso do guia", "/guia-uso.html"]];
+  var TABS = [["Cockpit", "/"], ["Mesa", "/mesa.html"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"],
+              ["Inteligência", "/inteligencia.html"], ["Guia interativo", "/guia.html"]];
+  var MAIS = [["Instruções", "/instrucoes.html"], ["Agenda de prazos", "/agenda.html"],
+              ["Andamento", "/eventos.html"], ["Notificações", "/notificacoes.html"],
+              ["Normas", "/normas.html"], ["Prestação de contas", "/prestacao.html"],
+              ["Uso do guia", "/guia-uso.html"]];
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -59,14 +60,17 @@
     var tabs = "", busca = "", mais = "";
     if (op) {
       tabs = TABS.map(function (x) { return '<a class="tab ' + (ativo(x[1]) ? "on" : "") + '" href="' + x[1] + '">' + x[0] + "</a>"; }).join("");
+      // Configurar a plataforma é de admin (Pedro, Danilo) — só aí o item aparece.
+      var itensMais = user.admin ? MAIS.concat([["⚙ Configurações", "/config.html"]]) : MAIS;
       mais = '<div class="menu" id="tmais"><button>Mais &#9662;</button><div class="drop">'
-        + MAIS.map(function (x) { return '<a href="' + x[1] + '">' + x[0] + "</a>"; }).join("") + "</div></div>";
+        + itensMais.map(function (x) { return '<a href="' + x[1] + '">' + x[0] + "</a>"; }).join("") + "</div></div>";
       busca = '<div class="busca"><input id="tnq" placeholder="Buscar cliente, proposta, órgão…" autocomplete="off" spellcheck="false"><div class="res" id="tnr"></div></div>';
     } else if (user) {
       var doc = user.doc_cliente || "";
       tabs = '<a class="tab ' + (AQUI.indexOf("/cliente") === 0 ? "on" : "") + '" href="/cliente.html?doc=' + doc + '">Minha ficha</a>'
         + '<a class="tab ' + (ativo("/prestacao.html") ? "on" : "") + '" href="/prestacao.html">Prestação</a>'
-        + '<a class="tab ' + (ativo("/guia.html") ? "on" : "") + '" href="/guia.html">Guia</a>';
+        + '<a class="tab ' + (ativo("/guia.html") ? "on" : "") + '" href="/guia.html">Guia interativo</a>'
+        + '<a class="tab ' + (ativo("/instrucoes.html") ? "on" : "") + '" href="/instrucoes.html">Instruções</a>';
     }
     var quem = esc((user && (user.nome || user.login)) || "conta");
     nav.innerHTML = '<a class="marca" href="/">Tui<span>ú</span></a>' + tabs + mais

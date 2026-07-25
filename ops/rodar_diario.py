@@ -117,6 +117,7 @@ def main():
                [py, "ingest/transparencia/coletar_regularidade.py"])
         _passo(fh, "conferencia de integridade (g2 ao vivo)", [py, "ingest/transferegov_g2/verificar.py"])
         _passo(fh, "motor de prazos (marcos + alertas)", [py, "backend/app/motor_prazos.py"])
+        _passo(fh, "execucao financeira por convenio (mesa)", [py, "backend/app/execucao.py"])
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])
         if os.environ.get("TUIU_IMAP_HOST"):
             _passo(fh, "inbox (e-mail -> eventos)", [py, "ingest/inbox/coletar_inbox.py"])

@@ -47,6 +47,7 @@ PERMISSOES_CLIENTE = (
     ("GET", "/api/minuta/"),       # minuta de ação da própria carteira
     ("GET", "/api/guia"),          # o guia é conhecimento público (manuais oficiais)
     ("GET", "/guia.html"),
+    ("GET", "/instrucoes.html"),   # pipeline estático — mesmo conhecimento público
     ("GET", "/cliente.html"),
     ("GET", "/login.html"),
 )
@@ -95,6 +96,14 @@ async def exigir_sessao(request: Request, call_next):
         if doc and not auth.pode_ver(usuario, doc):
             # 403 e não 404: o CNPJ existe ou não, não é assunto de quem perguntou
             return JSONResponse({"erro": "fora do seu acesso"}, status_code=403)
+
+    # Configurar a plataforma (situações, ações) é de ADMIN — Pedro e Danilo.
+    # Operador comum opera; admin calibra o motor. Fecha para todo o resto.
+    if (caminho.startswith("/api/config") or caminho == "/config.html") \
+            and not auth.e_admin(usuario):
+        if caminho.startswith("/api/"):
+            return JSONResponse({"erro": "so administrador"}, status_code=403)
+        return RedirectResponse("/", status_code=303)
 
     request.state.usuario = usuario
     return await call_next(request)
@@ -158,6 +167,17 @@ def fila_triar(payload: dict):
     from app.fila import triar
     return triar(payload.get("chave", ""), payload.get("status", ""),
                  payload.get("nota"), payload.get("operador"))
+
+
+@app.get("/api/mesa")
+def mesa(cliente: str | None = None):
+    """Mesa de trabalho: backlog de prestação de contas priorizado por faixa
+    (planilha "Prioridade" do Danilo). Operador-only — é a carteira inteira."""
+    try:
+        from app.mesa import montar
+        return {"disponivel": True, **montar(cliente)}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "itens": []}
 
 
 @app.get("/api/produtividade")
@@ -288,6 +308,24 @@ def relatorio_pix(cnpj: str, formato: str = "json"):
 def dossie_listar(cnpj: str, instrumento: str | None = None):
     from app.dossie import listar
     return listar(cnpj, instrumento)
+
+
+@app.get("/api/dossie/{cnpj}/checklist")
+def dossie_checklist(cnpj: str, instrumento: str):
+    """Checklist de dossiê da PC de um convênio (o "% dossiê" da planilha)."""
+    from app.dossie import checklist_estado
+    return checklist_estado(cnpj, instrumento)
+
+
+@app.post("/api/dossie/marcar")
+def dossie_marcar(corpo: dict, request: Request):
+    from app.dossie import marcar_item
+    r = marcar_item(corpo.get("cnpj", ""), corpo.get("instrumento", ""),
+                    corpo.get("item", ""), bool(corpo.get("feito")),
+                    request.state.usuario["login"])
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("erro", "não marcou"))
+    return r
 
 
 @app.get("/api/verificacao")
@@ -736,6 +774,67 @@ def busca(request: Request, q: str = ""):
     except Exception as exc:  # noqa: BLE001
         return {"resultados": [], "erro": str(exc)}
     return {"resultados": out}
+
+
+# ------------------------------------------------------------- config (admin)
+# O middleware já barra não-admin em /api/config* e /config.html; aqui só a lida.
+
+@app.get("/api/config/situacoes")
+def cfg_situacoes_listar():
+    from app.config_admin import listar_situacoes
+    return listar_situacoes()
+
+
+@app.get("/api/config/situacoes/vocabulario")
+def cfg_situacoes_vocab():
+    """Situações reais no acervo e a fase que a regra atual lhes dá — as sem
+    regra (fase null) são as candidatas a classificar."""
+    from app.config_admin import situacoes_no_dado
+    return situacoes_no_dado()
+
+
+@app.post("/api/config/situacoes")
+def cfg_situacao_salvar(corpo: dict, request: Request):
+    from app.config_admin import salvar_situacao
+    r = salvar_situacao(corpo.get("padrao", ""), corpo.get("fase", ""), corpo.get("nota"),
+                        request.state.usuario["login"], corpo.get("id"),
+                        bool(corpo.get("ativo", True)))
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("erro", "não salvou"))
+    return r
+
+
+@app.delete("/api/config/situacoes/{rid}")
+def cfg_situacao_remover(rid: int):
+    from app.config_admin import remover_situacao
+    return remover_situacao(rid)
+
+
+@app.get("/api/config/acoes")
+def cfg_acoes_listar():
+    from app.config_admin import listar_acoes
+    return listar_acoes()
+
+
+@app.post("/api/config/acoes")
+def cfg_acao_salvar(corpo: dict, request: Request):
+    from app.config_admin import salvar_acao
+    r = salvar_acao(corpo.get("tipo", ""), corpo.get("proximo_passo", ""),
+                    corpo.get("nota"), request.state.usuario["login"])
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("erro", "não salvou"))
+    return r
+
+
+@app.post("/api/config/reprocessar")
+def cfg_reprocessar():
+    """Aplica JÁ as regras: regera os marcos das carteiras (o que a cadeia diária
+    faria às 09:30). Assim o admin vê o efeito da mudança na hora."""
+    from app.motor_prazos import gerar_marcos
+    try:
+        return {"ok": True, **gerar_marcos()}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, str(exc)) from exc
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))
