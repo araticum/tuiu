@@ -141,6 +141,17 @@ def testar(numero: str, modo: str, evento: str | None) -> None:
     seco = " [DRYRUN — nada sai]" if wpp_cloud.dry_run() else ""
     destino = wpp_cloud.normalizar_numero(numero)
     print(f"modo={modo} · origem={origem} · destino={destino}{seco}")
+
+    if modo == "texto":
+        # texto livre só entrega dentro da janela de 24h. Antes do webhook isso
+        # era adivinhação — o erro da Meta era a primeira notícia.
+        from app import wpp_webhook
+        if not wpp_webhook.configurado():
+            print("  ⚠ webhook não configurado — não dá para saber se a janela de 24h "
+                  "está aberta; se estiver fechada, a Meta recusa")
+        elif not wpp_webhook.janela_aberta(destino):
+            print(f"  ⚠ nenhuma mensagem recebida de {destino} nas últimas 24h — "
+                  f"a janela provavelmente está FECHADA e o envio vai falhar")
     print("-" * 60)
     print(texto if modo == "texto" else "\n".join(f"  {{{{{i}}}}} {p}" for i, p in enumerate(params, 1)))
     print("-" * 60)

@@ -8,11 +8,13 @@ Rodar da raiz do repo:
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import auth
@@ -26,7 +28,12 @@ app = FastAPI(title="Tuiú", version="0.3.0-console")
 
 # Lista de exceções EXPLÍCITA e curta. Tudo o mais exige sessão — o padrão é
 # fechado, então esquecer de proteger uma rota nova não abre buraco.
-PUBLICO = {"/login.html", "/api/login", "/api/sessao"}
+#
+# `/api/wpp/webhook` é a ÚNICA rota pública que aceita POST. Está aqui porque os
+# servidores da Meta precisam alcançá-la e não fazem login — não é descuido. Ela
+# não confia em ninguém: exige HMAC-SHA256 do corpo cru com o App Secret e
+# RECUSA tudo enquanto o segredo não estiver configurado (ver app.wpp_webhook).
+PUBLICO = {"/login.html", "/api/login", "/api/sessao", "/api/wpp/webhook"}
 
 # Chrome de UI compartilhado (CSS/JS/fontes) NÃO tem dado sensível — o dado vive
 # atrás de /api. Servem sem sessão para qualquer papel; senão cliente/anônimo
@@ -460,6 +467,53 @@ def notificacoes_gravar(corpo: dict, request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"ok": True, **r, **estado_notificacoes()}
+
+
+@app.get("/api/wpp/webhook")
+def wpp_webhook_verificar(request: Request):
+    """Handshake de cadastro da Meta: ela chama com um token que nós escolhemos
+    e espera o `hub.challenge` de volta, em texto puro."""
+    from app import wpp_webhook
+
+    q = request.query_params
+    esperado = wpp_webhook.token_verificacao()
+    if not esperado or q.get("hub.verify_token") != esperado:
+        # 403 sem detalhe: quem errou o token não merece saber se ele existe
+        raise HTTPException(403, "verificacao recusada")
+    return PlainTextResponse(q.get("hub.challenge") or "")
+
+
+@app.post("/api/wpp/webhook")
+async def wpp_webhook_receber(request: Request):
+    """Entrada da Meta. Corpo lido como BYTES e autenticado ANTES de virar JSON —
+    assinar o texto reserializado validaria uma coisa e gravaria outra.
+
+    Sempre 200 no caminho feliz: erro faz a Meta reentregar em loop, e uma falha
+    nossa de gravação não é problema dela.
+    """
+    from app import wpp_webhook
+
+    corpo = await request.body()
+    if not wpp_webhook.assinatura_confere(corpo, request.headers.get("x-hub-signature-256")):
+        raise HTTPException(403, "assinatura invalida")
+    try:
+        return {"ok": True, **wpp_webhook.registrar(json.loads(corpo or b"{}"))}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[wpp_webhook] falha ao gravar: {exc}", file=sys.stderr)
+        return {"ok": False}
+
+
+@app.get("/api/wpp/entrada")
+def wpp_entrada(horas: int = 168):
+    """Quem escreveu para o número da API, e se a janela de 24h está aberta.
+    Sem conteúdo de mensagem — não é guardado (ver db/0026)."""
+    from app import wpp_webhook
+
+    try:
+        return {"disponivel": True, "contatos": wpp_webhook.quem_escreveu(horas),
+                "webhook_configurado": wpp_webhook.configurado()}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "contatos": []}
 
 
 @app.get("/api/normas")

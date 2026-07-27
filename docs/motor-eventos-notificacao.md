@@ -147,6 +147,43 @@ por chave (a sessão Seriema tinha), então sem a reserva uma queda no meio do
 laço faria o mesmo alerta tocar o telefone de alguém de novo no dia seguinte. O
 preço: entrega em `erro` não é retentada sozinha — reenvio é ato deliberado.
 
+### Webhook da Meta — a porta de entrada (F1.7)
+
+No Cloud API a mensagem RECEBIDA só chega por push; não existe rota para
+consultar histórico. Sem webhook, duas coisas ficam sem resposta: **quem
+escreveu para o número** e **se a janela de 24h está aberta** (a segunda importa
+enquanto o template não é aprovado, porque é ela que decide se texto livre
+entrega).
+
+`POST/GET /api/wpp/webhook` — a **única rota pública que aceita POST**. Está fora
+do gate de sessão porque a Meta precisa alcançá-la e não faz login. O que a
+protege:
+
+| | |
+|---|---|
+| Autenticação | `X-Hub-Signature-256` = HMAC-SHA256 do corpo **cru** com o App Secret |
+| Comparação | `hmac.compare_digest` (tempo constante) |
+| Sem segredo | **recusa tudo** — fail-closed, mesma regra do `app.config` |
+| Ordem | verifica os BYTES **antes** de virar JSON — assinar o texto reserializado validaria uma coisa e gravaria outra |
+| Resposta | 200 no caminho feliz; erro faz a Meta reentregar em loop |
+
+🔒 **Minimização por estrutura:** o texto da mensagem não é lido nem gravado — a
+tabela `wpp_entrada` **não tem coluna para ele** (`db/0026`). Guarda remetente,
+id, status e horário, que basta para as duas perguntas. Travado em
+`teste_wpp_webhook.py`: se alguém "melhorar" o extrator para guardar o texto, o
+teste cai.
+
+⚠️ **Escopo (dono, 27/07):** vale enquanto o destinatário é a EQUIPE. Ao expandir
+para CLIENTE, passa pelo gate do `PRIVACY.md` §2 antes — aí o número de terceiro
+que escreve é dado pessoal de titular que não é nosso operador.
+
+Config: `TUIU_WPP_APP_SECRET` (Meta > app > Configurações > Básico) e
+`TUIU_WPP_VERIFY_TOKEN` (string que nós escolhemos). Cadastro na Meta: app >
+WhatsApp > Configuração > Webhook, URL `https://tuiu.araticum.net/api/wpp/webhook`,
+campos `messages`; depois `POST /{WABA_ID}/subscribed_apps`.
+
+`GET /api/wpp/entrada?horas=` mostra quem escreveu e se a janela está aberta.
+
 ## API / tela
 
 - `GET /api/eventos?cnpj=&limite=` · `GET /api/entregas?canal=`
