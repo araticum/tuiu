@@ -252,28 +252,56 @@ def test_permissao_de_cliente_nao_tem_escrita_em_dado_de_operacao():
 
 # ------------------------------------------------- contas: criar e trocar login
 
-def test_operador_cria_operador_com_senha_sorteada():
+NOVA = "senha-escolhida-123"   # >= 12; quem cria define a senha
+
+
+def test_operador_cria_conta_com_senha_escolhida():
     auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
-    ok, msg, senha = auth.criar_operador("pytest_chefe", SENHA, "pytest_novo", "Novo")
+    ok, msg = auth.criar_conta("pytest_chefe", SENHA, "pytest_novo", "Novo", "operador", NOVA)
     assert ok, msg
-    assert senha and len(senha) >= 15, "a senha é sorteada, não escolhida por quem cria"
-    novo = auth.sessao_valida(auth.autenticar("pytest_novo", senha, ip="1.1.1.1")[0])
+    novo = auth.sessao_valida(auth.autenticar("pytest_novo", NOVA, ip="1.1.1.1")[0])
     assert novo["papel"] == "operador"
-    assert novo["trocar_senha"] is True, "conta nova nasce obrigada a trocar"
+    assert novo["trocar_senha"] is False, "quem cria já define a senha; não força troca"
 
 
-def test_criar_operador_exige_a_senha_de_quem_cria():
+def test_criar_conta_senha_curta_recusada():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, _ = auth.criar_conta("pytest_chefe", SENHA, "pytest_novo", "Novo", "operador", "curta")
+    assert not ok, "senha < 12 não passa"
+
+
+def test_criar_conta_exige_a_senha_de_quem_cria():
     """Criar conta amplia acesso: uma sessão sequestrada não pode fazer sozinha."""
     auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
-    ok, _, _ = auth.criar_operador("pytest_chefe", "senha errada", "pytest_novo", "Novo")
+    ok, _ = auth.criar_conta("pytest_chefe", "senha errada", "pytest_novo", "Novo", "operador", NOVA)
     assert not ok
+
+
+def test_leitor_ve_a_carteira_mas_e_so_leitura():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    ok, msg = auth.criar_conta("pytest_chefe", SENHA, "pytest_leitor", "Olho", "leitor", NOVA)
+    assert ok, msg
+    u = auth.sessao_valida(auth.autenticar("pytest_leitor", NOVA, ip="1.1.1.1")[0])
+    assert u["papel"] == "leitor"
+    assert auth.escopo(u) is None, "leitor enxerga a carteira toda (a escrita é barrada no middleware)"
+
+
+def test_editar_usuario_troca_papel_e_senha():
+    auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
+    auth.criar_conta("pytest_chefe", SENHA, "pytest_novo", "Novo", "operador", NOVA)
+    ok, msg = auth.editar_usuario("pytest_chefe", SENHA, "pytest_novo",
+                                  papel="leitor", senha="outra-senha-1234")
+    assert ok, msg
+    u = auth.sessao_valida(auth.autenticar("pytest_novo", "outra-senha-1234", ip="1.1.1.1")[0])
+    assert u["papel"] == "leitor", "papel mudou"
+    assert not auth.autenticar("pytest_novo", NOVA, ip="1.1.1.1")[0], "a senha antiga não vale mais"
 
 
 @pytest.mark.parametrize("login", ["ab", "com espaço", "", "x" * 40, "-comeca-com-traco",
                                    "acento_çã", "ponto..duplo" * 4])
 def test_login_invalido_recusado(login):
     auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
-    ok, _, _ = auth.criar_operador("pytest_chefe", SENHA, login, "Novo")
+    ok, _ = auth.criar_conta("pytest_chefe", SENHA, login, "Novo", "operador", NOVA)
     assert not ok
 
 
@@ -282,19 +310,19 @@ def test_login_email_aceito():
     valida a regex E a CHECK do banco (o INSERT passa pelo constraint 0017).
     Login com prefixo pytest_ para o fixture _limpo() faxinar depois."""
     auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
-    ok, msg, senha = auth.criar_operador("pytest_chefe", SENHA, "pytest_dono@araticum.net", "Dono")
+    ok, msg = auth.criar_conta("pytest_chefe", SENHA, "pytest_dono@araticum.net", "Dono", "operador", NOVA)
     assert ok, msg
-    assert auth.autenticar("pytest_dono@araticum.net", senha, ip="1.1.1.1")[0], "entra pelo e-mail"
+    assert auth.autenticar("pytest_dono@araticum.net", NOVA, ip="1.1.1.1")[0], "entra pelo e-mail"
 
 
 def test_login_maiusculo_e_normalizado_nao_recusado():
     """Login não é sensível a caixa: "Fulano" vira "fulano". Assim "FULANO"
     depois colide como repetido, em vez de criar uma segunda conta."""
     auth.criar_usuario("pytest_chefe", "Chefe", SENHA)
-    ok, msg, senha = auth.criar_operador("pytest_chefe", SENHA, "PyTest_Novo", "Novo")
+    ok, msg = auth.criar_conta("pytest_chefe", SENHA, "PyTest_Novo", "Novo", "operador", NOVA)
     assert ok, msg
-    assert auth.autenticar("pytest_novo", senha, ip="1.1.1.1")[0], "entra pelo login minúsculo"
-    ok2, _, _ = auth.criar_operador("pytest_chefe", SENHA, "PYTEST_NOVO", "Outro")
+    assert auth.autenticar("pytest_novo", NOVA, ip="1.1.1.1")[0], "entra pelo login minúsculo"
+    ok2, _ = auth.criar_conta("pytest_chefe", SENHA, "PYTEST_NOVO", "Outro", "operador", NOVA)
     assert not ok2, "a segunda tentativa colide, não cria conta paralela"
 
 

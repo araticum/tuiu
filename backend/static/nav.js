@@ -96,7 +96,9 @@
   function montar(user) {
     var st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st);
     var nav = document.createElement("nav"); nav.id = "tuiunav";
-    var op = !!(user && user.papel === "operador");
+    // operador E leitor têm o nav interno (a carteira toda); o leitor só não
+    // ganha os controles de edição/admin (config já é admin-only, user.admin).
+    var op = !!(user && (user.papel === "operador" || user.papel === "leitor"));
     var tabs = "", busca = "", mais = "";
     if (op) {
       tabs = TABS.map(function (x) { return '<a class="tab ' + (ativo(x[1]) ? "on" : "") + '" href="' + x[1] + '">' + x[0] + "</a>"; }).join("");

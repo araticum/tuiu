@@ -104,6 +104,12 @@ async def exigir_sessao(request: Request, call_next):
             # 403 e não 404: o CNPJ existe ou não, não é assunto de quem perguntou
             return JSONResponse({"erro": "fora do seu acesso"}, status_code=403)
 
+    # Papel LEITOR: só leitura. Toda escrita é barrada, exceto a autogestão
+    # mínima (sair, trocar a própria senha/login) — senão nem logout ele faz.
+    if usuario.get("papel") == "leitor" and request.method not in ("GET", "HEAD", "OPTIONS") \
+            and caminho not in ("/api/logout", "/api/senha", "/api/perfil/login"):
+        return JSONResponse({"erro": "somente leitura"}, status_code=403)
+
     # Configurar a plataforma (situações, ações) é de ADMIN — Pedro e Danilo.
     # Operador comum opera; admin calibra o motor. Fecha para todo o resto.
     if (caminho.startswith("/api/config") or caminho == "/config.html") \
@@ -506,16 +512,32 @@ def usuarios_listar():
 
 @app.post("/api/usuarios")
 def usuarios_criar(corpo: dict, request: Request):
+    """Operador cria uma conta escolhendo login, nome, PAPEL e SENHA."""
     u = request.state.usuario
     if u.get("papel") != "operador":
         raise HTTPException(403, "fora do seu acesso")
-    ok, msg, senha = auth.criar_operador(
+    ok, msg = auth.criar_conta(
         u["login"], corpo.get("minha_senha", ""),
-        corpo.get("login", ""), corpo.get("nome", ""))
+        corpo.get("login", ""), corpo.get("nome", ""),
+        corpo.get("papel", "operador"), corpo.get("senha", ""), corpo.get("doc_cliente"))
     if not ok:
         raise HTTPException(400, msg)
-    # a senha aparece UMA vez, para ser repassada; a conta nasce obrigada a trocar
-    return {"ok": True, "mensagem": msg, "senha_inicial": senha}
+    return {"ok": True, "mensagem": msg}
+
+
+@app.post("/api/usuarios/{alvo}/editar")
+def usuarios_editar(alvo: str, corpo: dict, request: Request):
+    """Operador edita nome, papel e/ou senha de uma conta."""
+    u = request.state.usuario
+    if u.get("papel") != "operador":
+        raise HTTPException(403, "fora do seu acesso")
+    ok, msg = auth.editar_usuario(
+        u["login"], corpo.get("minha_senha", ""), alvo,
+        nome=corpo.get("nome"), papel=corpo.get("papel"),
+        senha=corpo.get("senha"), doc_cliente=corpo.get("doc_cliente"))
+    if not ok:
+        raise HTTPException(400, msg)
+    return {"ok": True, "mensagem": msg}
 
 
 @app.post("/api/usuarios/{alvo}/desativar")

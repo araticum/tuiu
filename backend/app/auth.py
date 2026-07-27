@@ -170,8 +170,8 @@ def escopo(usuario: dict | None) -> set[str] | None:
     """
     if not usuario:
         return set()
-    if usuario.get("papel") == "operador":
-        return None
+    if usuario.get("papel") in ("operador", "leitor"):
+        return None   # leitor vê a carteira toda; a barreira de ESCRITA é o middleware
     if usuario.get("papel") == "cliente" and usuario.get("doc_cliente"):
         return {usuario["doc_cliente"]}
     return set()
@@ -246,36 +246,99 @@ def trocar_login(login_atual: str, novo: str, senha: str) -> tuple[bool, str]:
     return True, novo
 
 
-def criar_operador(criador: str, senha_do_criador: str, login: str,
-                   nome: str) -> tuple[bool, str, str | None]:
-    """Um operador cria outro. Devolve (ok, mensagem, senha_inicial).
+PAPEIS = ("operador", "leitor", "cliente")
 
-    A senha é SORTEADA, nunca escolhida por quem cria — assim o criador não sai
-    conhecendo a credencial de outra pessoa. Ela aparece uma única vez para ser
-    repassada, e a conta nasce obrigada a trocar.
 
-    Exige a senha de quem cria: criar operador é ampliar acesso, e uma sessão
-    sequestrada não pode fazer isso sozinha.
-    """
+def _confere_operador(con, login: str, senha: str) -> bool:
+    """Quem AMPLIA/altera acesso é operador e prova a própria senha — uma sessão
+    sequestrada não gerencia contas sozinha."""
+    r = con.execute("SELECT senha_hash FROM usuarios WHERE login=%s AND ativo AND papel='operador'",
+                    (login,)).fetchone()
+    return bool(r and confere_senha(senha, r[0]))
+
+
+def _doc_limpo(doc: str | None) -> str:
+    return "".join(c for c in (doc or "") if c.isdigit())
+
+
+def criar_conta(criador: str, senha_do_criador: str, login: str, nome: str,
+                papel: str, senha: str, doc_cliente: str | None = None) -> tuple[bool, str]:
+    """Um operador cria uma conta escolhendo login, nome, PAPEL e SENHA.
+
+    Substitui o fluxo de senha sorteada: quem cria define a credencial e a passa
+    pela pessoa. Exige a senha de quem cria (ampliar acesso é ato consciente)."""
     ok, login = _valida_login(login)
     if not ok:
-        return False, login, None
+        return False, login
     nome = (nome or "").strip()
     if len(nome) < 2:
-        return False, "informe o nome de quem vai usar a conta", None
+        return False, "informe o nome de quem vai usar a conta"
+    if papel not in PAPEIS:
+        return False, f"papel inválido (use {', '.join(PAPEIS)})"
+    if len(senha or "") < 12:
+        return False, "a senha precisa de ao menos 12 caracteres"
+    doc = _doc_limpo(doc_cliente) if papel == "cliente" else None
+    if papel == "cliente" and len(doc) != 14:
+        return False, "cliente exige um CNPJ (14 dígitos)"
     with conectar() as con:
-        r = con.execute("SELECT senha_hash FROM usuarios WHERE login=%s AND ativo AND papel='operador'",
-                        (criador,)).fetchone()
-        if not r or not confere_senha(senha_do_criador, r[0]):
-            return False, "sua senha não confere", None
+        if not _confere_operador(con, criador, senha_do_criador):
+            return False, "sua senha não confere"
         if con.execute("SELECT 1 FROM usuarios WHERE login=%s", (login,)).fetchone():
-            return False, "esse login já existe", None
-    senha = secrets.token_urlsafe(15)
-    criar_usuario(login, nome, senha, trocar_senha=True, papel="operador")
+            return False, "esse login já existe"
+    criar_usuario(login, nome, senha, trocar_senha=False, papel=papel, doc_cliente=doc)
     with conectar() as con:
-        _registrar(con, criador, True, f"criou o operador {login}", None)
+        _registrar(con, criador, True, f"criou {papel} {login}", None)
         con.commit()
-    return True, f"operador '{login}' criado", senha
+    return True, f"{papel} '{login}' criado"
+
+
+def editar_usuario(editor: str, senha_do_editor: str, alvo: str, nome: str | None = None,
+                   papel: str | None = None, senha: str | None = None,
+                   doc_cliente: str | None = None) -> tuple[bool, str]:
+    """Operador edita nome, papel e/ou senha de uma conta. Trocar a senha derruba
+    as sessões do alvo; trocar o papel vale no próximo request (a sessão relê o
+    papel do banco)."""
+    if papel is not None and papel not in PAPEIS:
+        return False, f"papel inválido (use {', '.join(PAPEIS)})"
+    if senha is not None and senha != "" and len(senha) < 12:
+        return False, "a senha nova precisa de ao menos 12 caracteres"
+    with conectar() as con:
+        if not _confere_operador(con, editor, senha_do_editor):
+            return False, "sua senha não confere"
+        atual = con.execute("SELECT papel, doc_cliente FROM usuarios WHERE login=%s AND ativo",
+                            (alvo,)).fetchone()
+        if not atual:
+            return False, "conta não encontrada"
+        papel_novo = papel or atual[0]
+        doc = _doc_limpo(doc_cliente) if papel_novo == "cliente" else None
+        if papel_novo == "cliente" and len(doc or "") != 14 and not atual[1]:
+            return False, "cliente exige um CNPJ (14 dígitos)"
+        if papel_novo == "cliente" and not doc:
+            doc = atual[1]                      # manteve cliente sem reinformar o CNPJ
+        # não orfanar a casa: o último operador ativo não pode deixar de ser operador
+        if atual[0] == "operador" and papel_novo != "operador":
+            restantes = con.execute(
+                "SELECT count(*) FROM usuarios WHERE ativo AND papel='operador' AND login<>%s",
+                (alvo,)).fetchone()[0]
+            if restantes == 0:
+                return False, "esse é o último operador ativo — promova outro antes"
+        campos, vals = [], []
+        if nome is not None and nome.strip():
+            campos.append("nome=%s"); vals.append(nome.strip())
+        if papel is not None:
+            campos.append("papel=%s"); vals.append(papel_novo)
+            campos.append("doc_cliente=%s"); vals.append(doc)
+        if senha:
+            campos.append("senha_hash=%s"); vals.append(hash_senha(senha))
+            campos.append("trocar_senha=false")
+        if not campos:
+            return False, "nada para mudar"
+        con.execute("UPDATE usuarios SET " + ", ".join(campos) + " WHERE login=%s", (*vals, alvo))
+        if senha:
+            con.execute("DELETE FROM sessoes WHERE login=%s", (alvo,))   # nova senha derruba sessões
+        _registrar(con, editor, True, f"editou {alvo} ({', '.join(c.split('=')[0] for c in campos)})", None)
+        con.commit()
+    return True, f"{alvo} atualizado"
 
 
 def listar_usuarios() -> list[dict]:

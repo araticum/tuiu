@@ -35,6 +35,14 @@
   .senha-nova code { font-family:ui-monospace, Consolas, monospace; font-size:15px; color:#7ee2ab;
                      user-select:all; }
   .nota { color:var(--dim); font-size:12px; margin-top:6px; }
+  select { width:100%; max-width:340px; background:#0e1622; border:1px solid var(--linha);
+           border-radius:7px; padding:9px 11px; color:var(--tx); font-size:13.5px; }
+  select:focus { outline:none; border-color:var(--acento); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 20px; max-width:720px; }
+  .grid2 input, .grid2 select { max-width:none; }
+  button.mini { margin:0 6px 0 0; padding:5px 12px; font-size:12px; background:none;
+                border:1px solid var(--linha); color:var(--dim); }
+  button.mini:hover { color:var(--tx); border-color:var(--acento); background:none; }
 </style>
 </head>
 <body>
@@ -64,28 +72,54 @@
 </div>
 
 <div id="area_operador" style="display:none">
-  <div class="sec">Novo operador</div>
+  <div class="sec">Novo usuário</div>
   <div class="card">
-    <label>Login</label>
-    <input id="op_login" placeholder="ex.: danilo">
-    <label>Nome</label>
-    <input id="op_nome" placeholder="Nome de quem vai usar">
-    <label>Sua senha (para confirmar)</label>
-    <input id="op_minha_senha" type="password" autocomplete="current-password">
-    <button onclick="criarOperador()">Criar operador</button>
+    <div class="grid2">
+      <div><label>Login</label><input id="u_login" placeholder="ex.: danilo"></div>
+      <div><label>Nome</label><input id="u_nome" placeholder="Nome de quem vai usar"></div>
+      <div><label>Papel</label>
+        <select id="u_papel" onchange="tglDoc('u')">
+          <option value="operador">Operador — opera tudo</option>
+          <option value="leitor">Leitor — só leitura</option>
+          <option value="cliente">Cliente — só a própria ficha</option>
+        </select></div>
+      <div id="u_docwrap" style="display:none"><label>CNPJ do cliente</label><input id="u_doc" placeholder="14 dígitos"></div>
+      <div><label>Senha (mínimo 12)</label><input id="u_senha" type="password" autocomplete="new-password"></div>
+      <div><label>Sua senha (para confirmar)</label><input id="u_minha" type="password" autocomplete="current-password"></div>
+    </div>
+    <button onclick="criarUsuario()">Criar usuário</button>
     <div class="msg" id="msg_op"></div>
-    <div id="senha_gerada"></div>
-    <div class="nota">A senha é sorteada pelo sistema e aparece <b>uma única vez</b> — nem
-      você a escolhe, nem ela fica guardada em texto. A conta nasce obrigada a trocar.</div>
+    <div class="nota">Você define a senha e a repassa por um canal seguro. <b>Leitor</b> vê a carteira
+      inteira mas não edita nada; <b>operador</b> opera tudo; <b>cliente</b> só a própria ficha.</div>
   </div>
 
   <div class="sec">Contas</div>
   <div class="card"><table id="tabela"><tr><th>login</th><th>nome</th><th>papel</th>
     <th>último acesso</th><th></th></tr></table></div>
+
+  <div class="card" id="editpanel" style="display:none">
+    <div class="sec" style="margin-top:0">Editar conta — <span id="e_login_lbl" style="color:var(--tx)"></span></div>
+    <div class="grid2">
+      <div><label>Nome</label><input id="e_nome"></div>
+      <div><label>Papel</label>
+        <select id="e_papel" onchange="tglDoc('e')">
+          <option value="operador">Operador — opera tudo</option>
+          <option value="leitor">Leitor — só leitura</option>
+          <option value="cliente">Cliente — só a própria ficha</option>
+        </select></div>
+      <div id="e_docwrap" style="display:none"><label>CNPJ do cliente</label><input id="e_doc" placeholder="14 dígitos"></div>
+      <div><label>Nova senha (vazio = manter)</label><input id="e_senha" type="password" autocomplete="new-password"></div>
+      <div><label>Sua senha (para confirmar)</label><input id="e_minha" type="password" autocomplete="current-password"></div>
+    </div>
+    <button onclick="salvarEdicao()">Salvar</button>
+    <button class="mini" onclick="fecharEdicao()" style="margin-top:14px">Cancelar</button>
+    <div class="msg" id="msg_edit"></div>
+    <div class="nota">Trocar a senha derruba as sessões da conta. Mudar o papel vale no próximo acesso dela.</div>
+  </div>
 </div>
 
 <script>
-let eu = null;
+let eu = null, USERS = [], editando = null;
 
 async function carregar() {
   const s = await (await fetch("/api/sessao")).json();
@@ -96,16 +130,23 @@ async function carregar() {
   if (eu.papel !== "operador") return;
   document.getElementById("area_operador").style.display = "";
   const d = await (await fetch("/api/usuarios")).json();
+  USERS = d.usuarios;
   const t = document.getElementById("tabela");
   t.innerHTML = "<tr><th>login</th><th>nome</th><th>papel</th><th>último acesso</th><th></th></tr>" +
     d.usuarios.map(u => `<tr class="${u.ativo ? "" : "inativo"}">
-        <td>${u.login}${u.trocar_senha ? " <small>(senha inicial pendente)</small>" : ""}</td>
+        <td>${u.login}${u.trocar_senha ? " <small>(troca pendente)</small>" : ""}</td>
         <td>${u.nome}</td>
         <td>${u.papel}${u.doc_cliente ? " · " + u.doc_cliente : ""}</td>
         <td>${(u.ultimo_acesso || "—").replace("T", " ").slice(0, 16)}</td>
-        <td>${u.ativo && u.login !== eu.login
-              ? `<button class="risco" onclick="desativar('${u.login}')">desativar</button>` : ""}</td>
+        <td>${u.ativo ? `<button class="mini" onclick="abrirEdicao('${u.login}')">editar</button>` : ""}${
+             u.ativo && u.login !== eu.login
+              ? `<button class="risco" onclick="excluir('${u.login}')">excluir</button>` : ""}</td>
       </tr>`).join("");
+}
+
+function tglDoc(pfx) {
+  document.getElementById(pfx + "_docwrap").style.display =
+    document.getElementById(pfx + "_papel").value === "cliente" ? "" : "none";
 }
 
 function aviso(id, texto, ok) {
@@ -135,23 +176,40 @@ async function trocarSenha() {
   if (ok) setTimeout(() => location.href = "/login.html", 1500);
 }
 
-async function criarOperador() {
+async function criarUsuario() {
+  const papel = document.getElementById("u_papel").value;
   const { ok, d } = await envia("/api/usuarios", {
-    login: op_login.value, nome: op_nome.value, minha_senha: op_minha_senha.value });
+    login: u_login.value, nome: u_nome.value, papel, senha: u_senha.value,
+    doc_cliente: papel === "cliente" ? u_doc.value : null, minha_senha: u_minha.value });
   aviso("msg_op", ok ? d.mensagem : (d.detail || "falhou"), ok);
-  op_minha_senha.value = "";
-  if (ok) {
-    document.getElementById("senha_gerada").innerHTML =
-      `<div class="senha-nova">Senha inicial de <b>${op_login.value}</b>:<br>
-        <code>${d.senha_inicial}</code><br>
-        <span class="nota">Passe por um canal seguro. Ela não aparece de novo.</span></div>`;
-    op_login.value = op_nome.value = "";
-    carregar();
-  }
+  u_minha.value = u_senha.value = "";
+  if (ok) { u_login.value = u_nome.value = ""; u_doc.value = ""; carregar(); }
 }
 
-async function desativar(alvo) {
-  const minha = prompt(`Desativar "${alvo}".\n\nConfirme com a SUA senha:`);
+function abrirEdicao(login) {
+  const u = USERS.find(x => x.login === login); if (!u) return;
+  editando = login;
+  document.getElementById("e_login_lbl").textContent = login;
+  e_nome.value = u.nome; e_papel.value = u.papel; e_doc.value = u.doc_cliente || "";
+  tglDoc("e"); e_senha.value = e_minha.value = "";
+  document.getElementById("msg_edit").textContent = "";
+  const p = document.getElementById("editpanel"); p.style.display = "";
+  p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function fecharEdicao() { editando = null; document.getElementById("editpanel").style.display = "none"; }
+async function salvarEdicao() {
+  const papel = e_papel.value;
+  const corpo = { nome: e_nome.value, papel, minha_senha: e_minha.value };
+  if (e_senha.value) corpo.senha = e_senha.value;
+  if (papel === "cliente") corpo.doc_cliente = e_doc.value;
+  const { ok, d } = await envia(`/api/usuarios/${editando}/editar`, corpo);
+  aviso("msg_edit", ok ? d.mensagem : (d.detail || "falhou"), ok);
+  e_minha.value = e_senha.value = "";
+  if (ok) { carregar(); setTimeout(fecharEdicao, 900); }
+}
+
+async function excluir(alvo) {
+  const minha = prompt(`Excluir (desativar) "${alvo}".\n\nConfirme com a SUA senha:`);
   if (!minha) return;
   const { ok, d } = await envia(`/api/usuarios/${alvo}/desativar`, { minha_senha: minha });
   if (!ok) alert(d.detail || "falhou"); else carregar();
