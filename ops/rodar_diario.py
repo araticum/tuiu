@@ -91,6 +91,7 @@ def _avisar_falha(nome: str, rc: int) -> None:
         from app import seriema, wpp_cloud
         from app.config import envio_externo_liberado
         from app.db import conectar
+        from app.notificador import CONSOLE_URL
 
         # respeita o interruptor: canal pausado não pode ser furado por aqui,
         # senão a pausa vale para o cliente e não para nós
@@ -107,7 +108,7 @@ def _avisar_falha(nome: str, rc: int) -> None:
                 ok, det = wpp_cloud.enviar_template(numero, [
                     "FALHA NA CADEIA DIÁRIA", "Tuiú (aviso interno)", f"elo: {nome} (rc={rc})",
                     "Os prazos NÃO foram recalculados hoje",
-                    "Ver: journalctl --user -u tuiu-diario -n 50", _br_hoje()])
+                    "Ver: journalctl --user -u tuiu-diario -n 50", CONSOLE_URL, _br_hoje()])
                 avisou = avisou or ok
                 if not ok:
                     print(f"[aviso] whatsapp {numero}: {det}", file=sys.stderr)

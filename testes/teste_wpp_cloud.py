@@ -7,10 +7,10 @@ O que estes testes protegem, em ordem de dano:
    corpo do evento vem de texto livre do Transferegov (parecer do órgão, razão
    social), um `\\n` no meio derruba o alerta inteiro — e derruba calado, no
    dia em que o prazo importava.
-2. **Autossuficiência.** Sem link para a mesa (o console é loopback), a
-   mensagem tem que carregar instrumento, transição, prazo, próximo passo e
-   exigência. Se o contexto sumir, o operador recebe um aviso que não permite
-   decidir nada.
+2. **Autossuficiência.** A mensagem tem que carregar instrumento, transição,
+   prazo, próximo passo e exigência — mais o link da ficha. Se o contexto sumir,
+   o operador recebe um aviso que não permite decidir nada; se o link divergir
+   entre texto e template, o erro só aparece no celular de quem recebeu.
 3. **Nada sai sem configuração.** Sem token/phone id o canal responde erro, não
    exceção — o evento segue na outbox.
 
@@ -31,7 +31,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "backend"))
 
 from app import wpp_cloud  # noqa: E402
-from app.notificador import mensagem, parametros_template  # noqa: E402
+from app.notificador import link_cliente, mensagem, parametros_template  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -90,25 +90,50 @@ def test_parametro_longo_e_truncado():
 
 
 # ------------------------------------------------------------- template
-def test_template_tem_seis_parametros_todos_validos():
+def test_template_tem_sete_parametros_todos_validos():
     params = parametros_template(EVENTO, CONTEXTO)
-    assert len(params) == 6
+    assert len(params) == 7
     for p in params:
         limpo = wpp_cloud.limpar_parametro(p)
         assert limpo and limpo != "—" or p == "—"
         assert "\n" not in limpo
 
 
-def test_template_carrega_o_que_decide(monkeypatch):
-    """Sem link para a mesa, o alerta precisa bastar-se: instrumento, transição,
-    prazo, próximo passo e exigência."""
+def test_template_carrega_o_que_decide():
+    """O alerta precisa bastar-se: instrumento, transição, prazo, próximo passo,
+    exigência — e o link da ficha."""
     params = parametros_template(EVENTO, CONTEXTO)
     junto = " ".join(params)
     for esperado in ("Convênio/CR 850704", "Prestação de Contas em Análise",
                      "Prestação de Contas em Complementação", "14/08/2026",
                      "Enviar a complementação exigida", "extrato bancário",
-                     "FUNDACAO FACULDADE DE MEDICINA", "25/07/2026"):
+                     "FUNDACAO FACULDADE DE MEDICINA", "25/07/2026",
+                     "cliente.html?doc=60453032000174"):
         assert esperado in junto, f"sumiu da mensagem: {esperado}"
+
+
+def test_link_do_template_e_do_texto_sao_o_mesmo(monkeypatch):
+    """Duas fontes de URL divergiriam caladas — o erro só apareceria no celular
+    de quem recebeu. Por isso as duas saem de TUIU_CONSOLE_URL."""
+    import importlib
+
+    from app import notificador
+    monkeypatch.setenv("TUIU_CONSOLE_URL", "https://outro.exemplo.net/")
+    importlib.reload(notificador)
+    try:
+        esperado = "https://outro.exemplo.net/cliente.html?doc=60453032000174"
+        assert notificador.link_cliente(EVENTO["cnpj"]) == esperado   # sem barra dupla
+        assert esperado in notificador.parametros_template(EVENTO, CONTEXTO)[5]
+        assert esperado in notificador.mensagem(EVENTO, CONTEXTO)
+    finally:
+        monkeypatch.delenv("TUIU_CONSOLE_URL", raising=False)
+        importlib.reload(notificador)
+
+
+def test_link_aponta_para_a_ficha_do_cliente():
+    """Ficha, não mesa: a /mesa.html não lê query param e abriria o backlog
+    inteiro da carteira em vez do caso avisado."""
+    assert link_cliente("60453032000174").endswith("/cliente.html?doc=60453032000174")
 
 
 def test_exigencia_com_quebra_de_linha_sobrevive_ao_envio():
@@ -131,8 +156,9 @@ def test_exigencia_com_quebra_de_linha_sobrevive_ao_envio():
 def test_todos_os_tipos_de_evento_geram_template_valido(tipo, de, para, trecho):
     ev = {**EVENTO, "tipo": tipo, "de": de, "para": para}
     params = parametros_template(ev, {})
-    assert len(params) == 6 and trecho in params[3]
+    assert len(params) == 7 and trecho in params[3]
     assert params[4] == "—"          # sem contexto, o campo não fica vazio
+    assert params[5].startswith("http")
     assert wpp_cloud.enviar_template("61999990000", params)[0]
 
 
@@ -141,8 +167,9 @@ def test_evento_de_inbox_tambem_vira_template():
           "para": "Solicitamos complementação da prestação de contas",
           "detalhe": {"prazos": ["10/08/2026"]}}
     params = parametros_template(ev, {})
-    assert len(params) == 6
+    assert len(params) == 7
     assert "e-mail" in params[0] and "10/08/2026" in params[4]
+    assert params[5].startswith("http")
 
 
 # ---------------------------------------------------------------- travas
@@ -170,5 +197,6 @@ def test_texto_da_outbox_tem_o_mesmo_conteudo_do_template():
     txt = mensagem(EVENTO, CONTEXTO)
     for esperado in ("FUNDACAO FACULDADE DE MEDICINA", "Convênio/CR 850704",
                      "→", "Prazo: 14/08/2026 (em 18d)", "Próximo passo:",
-                     "Exigência do órgão:", "25/07/2026", "D-1"):
+                     "Exigência do órgão:", "25/07/2026", "D-1",
+                     "cliente.html?doc=60453032000174"):
         assert esperado in txt, f"sumiu da outbox: {esperado}"

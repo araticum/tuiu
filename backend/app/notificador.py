@@ -41,6 +41,11 @@ from app.config import envio_externo_liberado  # noqa: E402
 from app.db import conectar  # noqa: E402
 
 WEBHOOK_URL = os.environ.get("TUIU_WEBHOOK_URL", "").strip()
+# O console está publicado desde 20/07 — o link abre no celular e cai na tela de
+# login do Tuiú. Fica em env porque a URL é a MESMA nos dois caminhos (texto e
+# template): duas fontes divergiriam calado, e o erro só apareceria no celular
+# de quem recebeu.
+CONSOLE_URL = os.environ.get("TUIU_CONSOLE_URL", "https://tuiu.araticum.net").strip().rstrip("/")
 
 ICONE = {"novo": "🆕", "mudanca": "🔔", "incremento": "➕"}
 TIPO_LEGIVEL = {"novo": "novo instrumento", "mudanca": "mudança de andamento",
@@ -49,6 +54,15 @@ TIPO_LEGIVEL = {"novo": "novo instrumento", "mudanca": "mudança de andamento",
 
 def _br(d) -> str:
     return d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else str(d or "")
+
+
+def link_cliente(cnpj: str) -> str:
+    """Ficha do cliente — cadastro, carteira, prazos, andamento e trilha.
+
+    É a `/cliente.html?doc=`, não a mesa: a mesa não lê query param, então um
+    link para ela abriria o backlog inteiro da carteira, não o caso avisado.
+    """
+    return f"{CONSOLE_URL}/cliente.html?doc={cnpj}"
 
 
 def contexto(con, cnpj: str, instrumento: str) -> dict:
@@ -122,6 +136,7 @@ def mensagem(ev: dict, ctx: dict | None = None) -> str:
     ic = ICONE.get(ev["tipo"], "🔔")
     corpo = "\n".join([f"{ev['rotulo']}", _transicao(ev)] + _linhas_contexto(ctx))
     return (f"{ic} {ev['ente']}\n{corpo}\n"
+            f"Abrir: {link_cliente(ev['cnpj'])}\n"
             f"(andamento no Transferegov · dados de {_br_iso(ev['snapshot'])} · D-1)\n— Tuiú")
 
 
@@ -131,7 +146,7 @@ def _br_iso(iso: str) -> str:
 
 
 def parametros_template(ev: dict, ctx: dict | None = None) -> list[str]:
-    """Os {{1}}..{{6}} do template `tuiu_andamento` (texto aprovado no doc).
+    """Os {{1}}..{{7}} do template `tuiu_andamento` (texto aprovado no doc).
 
     Uma linha por parâmetro: a Meta recusa quebra de linha dentro do valor, então
     o contexto operacional inteiro entra concatenado no {{5}}.
@@ -143,10 +158,10 @@ def parametros_template(ev: dict, ctx: dict | None = None) -> list[str]:
         return ["notificação por e-mail", ev["ente"], ev["rotulo"],
                 (ev["para"] or "")[:200],
                 f"Prazo citado: {', '.join(prazos)}" if prazos else "—",
-                _br_iso(ev["snapshot"])]
+                link_cliente(ev["cnpj"]), _br_iso(ev["snapshot"])]
     return [TIPO_LEGIVEL.get(ev["tipo"], "andamento"), ev["ente"], ev["rotulo"],
             _transicao(ev), " · ".join(_linhas_contexto(ctx)) or "—",
-            _br_iso(ev["snapshot"])]
+            link_cliente(ev["cnpj"]), _br_iso(ev["snapshot"])]
 
 
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> tuple[bool, str]:

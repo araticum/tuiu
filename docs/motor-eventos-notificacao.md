@@ -54,7 +54,8 @@ mensagem de template aprovado. Cadastrar no WhatsApp Manager como
 
 {{5}}
 
-_Transferegov · dados de {{6}} · D-1_
+Abrir: {{6}}
+_Transferegov · dados de {{7}} · D-1_
 ```
 
 | | conteúdo | exemplo |
@@ -64,19 +65,33 @@ _Transferegov · dados de {{6}} · D-1_
 | `{{3}}` | instrumento | `Convênio/CR 850704` |
 | `{{4}}` | transição | `Prestação de Contas em Análise → … em Complementação` |
 | `{{5}}` | o que fazer | `Prazo: 14/08/2026 (em 18d) · bola com o convenente · Próximo passo: …` |
-| `{{6}}` | data do dado | `25/07/2026` |
+| `{{6}}` | ficha do cliente | `https://tuiu.araticum.net/cliente.html?doc=60453032000174` |
+| `{{7}}` | data do dado | `25/07/2026` |
+
+Se a Meta recusar `{{6}}` por ser URL inteira, mover a base para o texto fixo do
+template (`https://tuiu.araticum.net/cliente.html?doc={{6}}`) e passar só o CNPJ
+— aí `TUIU_CONSOLE_URL` e o template têm que combinar, e trocar o domínio passa
+a exigir nova aprovação.
 
 ⚠️ A Meta recusa parâmetro com quebra de linha, tabulação, 5+ espaços seguidos
 ou vazio (erro 132000). O parecer do órgão vem do CSV **com** `\n` e `\t`, então
 `wpp_cloud.limpar_parametro` normaliza tudo antes de enviar — a quebra de linha
 mora no corpo do template, nunca no valor. Travado em `teste_wpp_cloud.py`.
 
-### A mensagem se basta (sem link)
+### A mensagem se basta — e ainda leva o link
 
-Decisão do dono, 27/07: o console é loopback e não há URL que abra no celular,
-então a mensagem **não leva link para a mesa**. Em troca ela carrega o que
-decide — instrumento, transição, prazo, de quem é a bola, próximo passo e a
-exigência do órgão — puxados de `marcos` por `notificador.contexto()`.
+Carrega o que decide (instrumento, transição, prazo, de quem é a bola, próximo
+passo e a exigência do órgão, puxados de `marcos` por `notificador.contexto()`)
+**e** o link da ficha: `{TUIU_CONSOLE_URL}/cliente.html?doc=<cnpj>`, que abre no
+celular na tela de login do Tuiú.
+
+É a ficha do cliente, **não a mesa**: a `/mesa.html` não lê query param, então
+um link para ela abriria o backlog inteiro da carteira em vez do caso avisado.
+Deep-link por item da mesa é trabalho em aberto.
+
+⚠️ A URL sai de `TUIU_CONSOLE_URL` (default `https://tuiu.araticum.net`) e é a
+MESMA nos dois caminhos, texto e template — duas fontes divergiriam caladas e o
+erro só apareceria no celular de quem recebeu.
 
 ### Destinatários
 
