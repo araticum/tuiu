@@ -26,7 +26,10 @@ DESTINO="${TUIU_DESTINO:-/home/pedro/tuiu}"
 
 echo "==> enviando código para ${HOST}:${DESTINO}"
 ssh "$HOST" "mkdir -p ${DESTINO}"
-tar czf - backend ingest ferramentas ops db testes 2>/dev/null \
+# pytest.ini VAI JUNTO: sem ele o `python_files = teste_*.py` some, o pytest
+# procura `test_*.py`, não acha nada e sai — a suíte do host parecia verde sem
+# ter executado UM teste sequer (medido 27/07: `pytest -q` = "no tests ran").
+tar czf - backend ingest ferramentas ops db testes pytest.ini 2>/dev/null \
   | ssh "$HOST" "cd ${DESTINO} && tar xzf - && find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true"
 
 echo "==> preparando ambiente"
