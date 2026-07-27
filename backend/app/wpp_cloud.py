@@ -78,6 +78,22 @@ def normalizar_numero(bruto: str) -> str:
     return f"55{digitos}" if len(digitos) in (10, 11) else digitos
 
 
+def chave_numero(bruto: str) -> str:
+    """Forma canônica para COMPARAR números — não para enviar.
+
+    A Meta devolve o celular brasileiro **sem o nono dígito** no `recipient_id`
+    e no `from` do webhook (`556181366766`), enquanto nós enviamos com ele
+    (`5561981366766`). Comparar as duas formas cruas nunca casa, e o efeito é a
+    janela de 24h responder "fechada" para sempre — medido em 27/07 no primeiro
+    recibo real que voltou.
+
+    Só mexe no que é reconhecidamente celular BR (13 dígitos, 55 + DDD + 9…):
+    fixo brasileiro e número estrangeiro passam intactos.
+    """
+    d = re.sub(r"\D", "", bruto or "")
+    return d[:4] + d[5:] if len(d) == 13 and d.startswith("55") and d[4] == "9" else d
+
+
 def limpar_parametro(texto: str | None) -> str:
     """Deixa o valor no formato que a Meta aceita. Nunca devolve vazio: parâmetro
     em branco é recusado no envio, então some vira travessão."""

@@ -83,20 +83,22 @@ def extrair(payload: dict) -> list[dict]:
     O formato é `entry[].changes[].value.{messages,statuses}[]`. O texto da
     mensagem existe em `messages[].text.body` e é DELIBERADAMENTE ignorado.
     """
+    from app.wpp_cloud import chave_numero
+
     linhas: list[dict] = []
     for entrada in payload.get("entry") or []:
         for mudanca in entrada.get("changes") or []:
             valor = mudanca.get("value") or {}
             for msg in valor.get("messages") or []:
                 linhas.append({
-                    "tipo": "mensagem", "numero": str(msg.get("from") or ""),
+                    "tipo": "mensagem", "numero": chave_numero(msg.get("from")),
                     "wamid": msg.get("id"), "status": None, "erro": None,
                     "carimbo": _carimbo(msg.get("timestamp")),
                 })
             for st in valor.get("statuses") or []:
                 erros = st.get("errors") or []
                 linhas.append({
-                    "tipo": "status", "numero": str(st.get("recipient_id") or ""),
+                    "tipo": "status", "numero": chave_numero(st.get("recipient_id")),
                     "wamid": st.get("id"), "status": st.get("status"),
                     "erro": (erros[0].get("title") if erros else None),
                     "carimbo": _carimbo(st.get("timestamp")),
@@ -127,7 +129,9 @@ def janela_aberta(numero: str) -> bool:
     template aprovado. Antes desta tabela isso era adivinhação — o envio falhava
     e o erro da Meta era a primeira notícia."""
     from app import wpp_cloud
-    alvo = wpp_cloud.normalizar_numero(numero)
+    # chave_numero, não normalizar_numero: o que está gravado veio da Meta, sem
+    # o nono dígito. Comparar com a forma de ENVIO nunca casaria.
+    alvo = wpp_cloud.chave_numero(wpp_cloud.normalizar_numero(numero))
     if not alvo:
         return False
     try:

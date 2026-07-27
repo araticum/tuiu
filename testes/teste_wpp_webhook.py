@@ -132,7 +132,9 @@ def test_conteudo_da_mensagem_nunca_e_extraido():
 def test_extrai_o_metadado_que_responde_as_duas_perguntas():
     linha = wpp_webhook.extrair(PAYLOAD)[0]
     assert linha["tipo"] == "mensagem"
-    assert linha["numero"] == "5561981366766"
+    # gravado na forma canônica (sem o nono dígito), que é como a Meta manda e
+    # como a consulta procura — ver test_chave_de_comparacao_absorve_o_nono_digito
+    assert linha["numero"] == "556181366766"
     assert linha["wamid"] == "wamid.ENTRADA1"
     assert linha["carimbo"] is not None
 
@@ -159,7 +161,7 @@ def test_carimbo_invalido_nao_derruba_a_linha():
     payload = {"entry": [{"changes": [{"value": {"messages": [
         {"from": "5561981366766", "id": "w1", "timestamp": "não-é-número"}]}}]}]}
     linha = wpp_webhook.extrair(payload)[0]
-    assert linha["carimbo"] is None and linha["numero"] == "5561981366766"
+    assert linha["carimbo"] is None and linha["numero"] == "556181366766"
 
 
 # -------------------------------------------------------------- handshake
@@ -183,7 +185,9 @@ def test_janela_de_24h_respeita_a_borda():
     from app.db import conectar, migrar
 
     migrar()
-    numero, casos = "5599999999999", [(2, True), (23, True), (25, False)]
+    # número de FIXO (12 dígitos) de propósito: `chave_numero` não mexe nele, e
+    # assim este caso mede só o intervalo, sem misturar com o nono dígito
+    numero, casos = "556133334444", [(2, True), (23, True), (25, False)]
     try:
         for horas, esperado in casos:
             with conectar() as con:
@@ -198,4 +202,51 @@ def test_janela_de_24h_respeita_a_borda():
     finally:
         with conectar() as con:
             con.execute("DELETE FROM wpp_entrada WHERE numero=%s", (numero,))
+            con.commit()
+
+
+# ------------------------------------------------- nono dígito (Brasil)
+@pytest.mark.parametrize("bruto, esperado", [
+    ("5561981366766", "556181366766"),   # celular BR: a Meta devolve sem o 9
+    ("556181366766", "556181366766"),    # já na forma da Meta, não mexe
+    ("556133334444", "556133334444"),    # fixo BR (12 díg.) passa intacto
+    ("351912345678", "351912345678"),    # estrangeiro passa intacto
+    ("5561881366766", "5561881366766"),  # 13 díg. mas 5º não é 9: não é o caso
+    ("", ""),
+])
+def test_chave_de_comparacao_absorve_o_nono_digito(bruto, esperado):
+    """A Meta devolve celular BR sem o nono dígito no `from`/`recipient_id`, e
+    nós enviamos com ele. Sem esta forma canônica as duas nunca casam e a janela
+    de 24h responde 'fechada' para sempre — medido no 1º recibo real (27/07)."""
+    from app import wpp_cloud
+    assert wpp_cloud.chave_numero(bruto) == esperado
+
+
+def test_webhook_grava_na_mesma_chave_que_a_consulta_procura():
+    """O bug real: gravar como a Meta manda e consultar como nós enviamos."""
+    from app import wpp_cloud
+    payload = {"entry": [{"changes": [{"value": {"messages": [
+        {"from": "556181366766", "id": "w9", "timestamp": "1785000000"}]}}]}]}
+    gravado = wpp_webhook.extrair(payload)[0]["numero"]
+    procurado = wpp_cloud.chave_numero(wpp_cloud.normalizar_numero("+55 61 98136-6766"))
+    assert gravado == procurado
+
+
+def test_janela_encontra_numero_no_formato_de_envio():
+    """Ponta a ponta: grava como a Meta manda, pergunta como o operador digita."""
+    from app.db import conectar, migrar
+
+    migrar()
+    try:
+        with conectar() as con:
+            con.execute("DELETE FROM wpp_entrada WHERE wamid='wamid.nono'")
+            con.execute(
+                "INSERT INTO wpp_entrada (tipo, numero, wamid, recebido_em)"
+                " VALUES ('mensagem', '556188877766', 'wamid.nono', now())")
+            con.commit()
+        assert wpp_webhook.janela_aberta("5561988877766")   # com o 9, como enviamos
+        assert wpp_webhook.janela_aberta("+55 61 98887-7766")
+    finally:
+        with conectar() as con:
+            con.execute("DELETE FROM wpp_entrada WHERE wamid='wamid.nono'")
             con.commit()
