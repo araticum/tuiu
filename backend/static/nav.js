@@ -1,13 +1,18 @@
 /* Tuiú — shell de navegação compartilhado.
    Um só componente, injetado em toda página autenticada, consciente de papel.
    Barra fixa no topo (padrão do veredas) + busca global do operador.
+   Tema clássico preservado; quando <html data-tema="cartorio"> está ativo,
+   a barra assume o visual Cartório (papel, filetes, rubricas).
    Inclua com:  <script src="/nav.js" defer></script>  */
 (function () {
   var PAL = { bg: "#0e1620", barra: "#0b1017", linha: "#1e2a3a", tx: "#dbe6f4",
               dim: "#8ba3bf", acento: "#4da3ff" };
+  var PAL_CART = { bg: "#faf7ee", barra: "#f5f1e6", linha: "#ddd3bc", linha2: "#c9bda0",
+                   tx: "#221c12", dim: "#5c5344", acento: "#b23a2a", selo: "#b23a2a" };
   var AQUI = (location.pathname.replace(/\/index\.html$/, "/")) || "/";
 
   function ativo(u) { var a = u.split("?")[0]; return a === "/" ? AQUI === "/" : AQUI === a; }
+  function cartorio() { return document.documentElement.getAttribute("data-tema") === "cartorio"; }
 
   var CSS = ""
     + "body{padding-top:64px!important}"
@@ -37,11 +42,46 @@
       + ";border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12.5px}"
     + "#tuiunav .menu>button:hover{color:" + PAL.tx + ";border-color:" + PAL.acento + "}"
     + "#tuiunav .drop{position:absolute;top:40px;right:0;background:" + PAL.bg + ";border:1px solid " + PAL.linha
-      + ";border-radius:10px;overflow:hidden;display:none;min-width:160px;box-shadow:0 12px 30px #0009}"
+      + ";border-radius:10px;overflow:hidden;display:none;min-width:170px;box-shadow:0 12px 30px #0009}"
     + "#tuiunav .drop.aberto{display:block}"
-    + "#tuiunav .drop a{display:block;padding:8px 13px;color:" + PAL.tx + ";text-decoration:none;font-size:13px}"
-    + "#tuiunav .drop a:hover{background:#141d29}"
-    + "@media(max-width:860px){#tuiunav .tab.sec{display:none}#tuiunav .busca input{width:120px}#tuiunav .busca input:focus{width:170px}}";
+    + "#tuiunav .drop a,#tuiunav .drop button.op{display:block;width:100%;text-align:left;padding:8px 13px;color:" + PAL.tx
+      + ";text-decoration:none;font-size:13px;background:none;border:0;cursor:pointer;font-family:inherit}"
+    + "#tuiunav .drop a:hover,#tuiunav .drop button.op:hover{background:#141d29}"
+    + "#tuiunav .drop .rotulo{padding:7px 13px 3px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:" + PAL.dim + "}"
+    + "#tuiunav .drop button.op .marca-tema{float:right;color:" + PAL.acento + "}"
+    + "@media(max-width:860px){#tuiunav .tab.sec{display:none}#tuiunav .busca input{width:120px}#tuiunav .busca input:focus{width:170px}}"
+    /* ===== Cartório ===== */
+    + "html[data-tema=cartorio] body{padding-top:70px!important}"
+    + "html[data-tema=cartorio] #tuiunav{height:58px;background:" + PAL_CART.barra
+      + ";border-bottom:2px solid " + PAL_CART.tx
+      + ";font-family:Archivo,system-ui,sans-serif}"
+    + "html[data-tema=cartorio] #tuiunav .marca{font:italic 600 23px/1 Fraunces,Georgia,serif;color:" + PAL_CART.tx
+      + ";letter-spacing:.01em;margin-right:16px}"
+    + "html[data-tema=cartorio] #tuiunav .marca span{font-style:normal;color:" + PAL_CART.selo + "}"
+    + "html[data-tema=cartorio] #tuiunav a.tab{font:600 10.5px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.15em;"
+      + "text-transform:uppercase;color:" + PAL_CART.dim + ";border:1px solid transparent;border-radius:0;padding:7px 12px}"
+    + "html[data-tema=cartorio] #tuiunav a.tab:hover{color:" + PAL_CART.tx + ";background:none;border-color:" + PAL_CART.linha2 + "}"
+    + "html[data-tema=cartorio] #tuiunav a.tab.on{color:" + PAL_CART.selo + ";background:rgba(178,58,42,.05);"
+      + "border-color:" + PAL_CART.selo + ";box-shadow:none}"
+    + "html[data-tema=cartorio] #tuiunav .busca input{background:" + PAL_CART.bg + ";border:1px solid " + PAL_CART.linha2
+      + ";border-radius:0;color:" + PAL_CART.tx + ";font-size:12.5px}"
+    + "html[data-tema=cartorio] #tuiunav .busca input:focus{border-color:" + PAL_CART.tx
+      + ";box-shadow:3px 3px 0 rgba(34,28,18,.12)}"
+    + "html[data-tema=cartorio] #tuiunav .res{background:" + PAL_CART.bg + ";border:1px solid " + PAL_CART.linha2
+      + ";border-radius:0;box-shadow:5px 5px 0 rgba(34,28,18,.12)}"
+    + "html[data-tema=cartorio] #tuiunav .res a{color:" + PAL_CART.tx + ";border-bottom:1px solid " + PAL_CART.linha + "}"
+    + "html[data-tema=cartorio] #tuiunav .res a:hover{background:rgba(34,28,18,.04)}"
+    + "html[data-tema=cartorio] #tuiunav .res a small{color:" + PAL_CART.dim + "}"
+    + "html[data-tema=cartorio] #tuiunav .res .tag{color:" + PAL_CART.selo + "}"
+    + "html[data-tema=cartorio] #tuiunav .menu>button{border:1px solid " + PAL_CART.linha2 + ";border-radius:0;"
+      + "color:" + PAL_CART.dim + ";font:600 10.5px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}"
+    + "html[data-tema=cartorio] #tuiunav .menu>button:hover{color:" + PAL_CART.tx + ";border-color:" + PAL_CART.tx + "}"
+    + "html[data-tema=cartorio] #tuiunav .drop{background:" + PAL_CART.bg + ";border:1px solid " + PAL_CART.linha2
+      + ";border-radius:0;box-shadow:5px 5px 0 rgba(34,28,18,.12)}"
+    + "html[data-tema=cartorio] #tuiunav .drop a,html[data-tema=cartorio] #tuiunav .drop button.op{color:" + PAL_CART.tx + "}"
+    + "html[data-tema=cartorio] #tuiunav .drop a:hover,html[data-tema=cartorio] #tuiunav .drop button.op:hover{background:rgba(34,28,18,.05)}"
+    + "html[data-tema=cartorio] #tuiunav .drop .rotulo{color:" + PAL_CART.dim + "}"
+    + "html[data-tema=cartorio] #tuiunav .drop button.op .marca-tema{color:" + PAL_CART.selo + "}";
 
   var TABS = [["Cockpit", "/"], ["Mesa", "/mesa.html"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"],
               ["Inteligência", "/inteligencia.html"], ["Guia interativo", "/guia.html"]];
@@ -60,7 +100,6 @@
     var tabs = "", busca = "", mais = "";
     if (op) {
       tabs = TABS.map(function (x) { return '<a class="tab ' + (ativo(x[1]) ? "on" : "") + '" href="' + x[1] + '">' + x[0] + "</a>"; }).join("");
-      // Configurar a plataforma é de admin (Pedro, Danilo) — só aí o item aparece.
       var itensMais = user.admin ? MAIS.concat([["⚙ Configurações", "/config.html"]]) : MAIS;
       mais = '<div class="menu" id="tmais"><button>Mais &#9662;</button><div class="drop">'
         + itensMais.map(function (x) { return '<a href="' + x[1] + '">' + x[0] + "</a>"; }).join("") + "</div></div>";
@@ -73,10 +112,14 @@
         + '<a class="tab ' + (ativo("/instrucoes.html") ? "on" : "") + '" href="/instrucoes.html">Instruções</a>';
     }
     var quem = esc((user && (user.nome || user.login)) || "conta");
+    var temaAtual = (window.TuiuTema && TuiuTema.atual()) || "cartorio";
+    var seletor = '<div class="rotulo">Tema</div>'
+      + '<button class="op" data-tema="claro">Escuro (clássico)<span class="marca-tema">' + (temaAtual !== "cartorio" ? "✓" : "") + '</span></button>'
+      + '<button class="op" data-tema="cartorio">Cartório (papel)<span class="marca-tema">' + (temaAtual === "cartorio" ? "✓" : "") + '</span></button>';
     nav.innerHTML = '<a class="marca" href="/">Tui<span>ú</span></a>' + tabs + mais
       + '<span class="sp"></span>' + busca
       + '<div class="menu" id="tuser"><button>' + quem + ' &#9662;</button>'
-      + '<div class="drop"><a href="/conta.html">Conta</a><a href="#" id="tsair">Sair</a></div></div>';
+      + '<div class="drop"><a href="/conta.html">Conta</a>' + seletor + '<a href="#" id="tsair">Sair</a></div></div>';
     document.body.insertBefore(nav, document.body.firstChild);
     wire(op);
   }
@@ -98,6 +141,13 @@
     var sair = document.getElementById("tsair");
     if (sair) sair.onclick = function (e) { e.preventDefault();
       fetch("/api/logout", { method: "POST" }).then(function () { location.href = "/login.html"; }); };
+    var ops = document.querySelectorAll("#tuiunav .drop button.op[data-tema]");
+    for (var b = 0; b < ops.length; b++) {
+      ops[b].onclick = function (e) {
+        e.stopPropagation();
+        if (window.TuiuTema) { TuiuTema.definir(this.getAttribute("data-tema")); location.reload(); }
+      };
+    }
     if (!op) return;
     var q = document.getElementById("tnq"), r = document.getElementById("tnr"), tmr = null;
     q.onclick = function (e) { e.stopPropagation(); if (r.innerHTML) r.classList.add("aberto"); };

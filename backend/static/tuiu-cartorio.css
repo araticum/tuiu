@@ -1,0 +1,355 @@
+@import url("/tuiu-fontes.css");
+/* ============================================================
+   Tuiú · Tema Cartório (design system)
+   Ativado por <html data-tema="cartorio"> ou body.tema-cartorio.
+   O tema clássico permanece intacto — nada aqui é aplicado sem
+   o atributo/classe acima.
+
+   Estratégia: os tokens do Cartório ocupam as MESMAS variáveis
+   (--bg, --card, --linha, --tx, --dim, --ok, --at, --ruim,
+   --acao, --acento) que todas as páginas já consomem; regras de
+   refinamento cobrem os componentes recorrentes (.kpi, .er,
+   .prio, .tagN, tables, formulários…).
+   ============================================================ */
+
+:root[data-tema="cartorio"],
+body.tema-cartorio{
+  /* tokens — papel & tinta */
+  --bg:#f5f1e6;            /* papel creme            */
+  --card:#faf7ee;          /* cartão de papel        */
+  --card2:#efe9da;         /* papel envelhecido      */
+  --linha:#ddd3bc;         /* filete claro           */
+  --tx:#221c12;            /* tinta                  */
+  --dim:#5c5344;           /* tinta secundária       */
+  --ok:#4a7c43;            /* verde-ofício           */
+  --at:#a97b16;            /* ocre                   */
+  --ruim:#b23a2a;          /* vermelho-selo          */
+  --acao:#c1561f;          /* ferrugem               */
+  --acento:#b23a2a;        /* acento = selo          */
+  --selo:#8f2b1c;           /* carimbo (hover do botao) */
+  --novo:#4a7c43;          /* eventos: novo          */
+  --mud:#a97b16;           /* eventos: mudança       */
+  --inc:#5c5344;           /* eventos: incremento    */
+  --alerta:#a97b16;        /* conta/inteligência     */
+  --erro:#b23a2a;          /* conta/login            */
+  --perigo:#b23a2a;        /* inteligência           */
+  --pend:#a97b16;          /* normas                 */
+
+  /* famílias tipográficas do Cartório */
+  --f-serif:"Fraunces",Georgia,"Times New Roman",serif;
+  --f-sans:"Archivo",system-ui,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+
+:root[data-tema="cartorio"] body,
+body.tema-cartorio{
+  background:var(--bg);
+  color:var(--tx);
+  font-family:var(--f-sans) !important;
+  -webkit-font-smoothing:antialiased;
+}
+/* vence os `font: 14px/1.5 system-ui` rígidos das páginas */
+body.tema-cartorio :not(code):not(pre){
+  font-family:var(--f-sans);
+}
+body.tema-cartorio code,
+body.tema-cartorio pre,
+body.tema-cartorio .mono{
+  font-family:var(--f-mono);
+}
+
+/* ---------- tipografia de estrutura ---------- */
+body.tema-cartorio h1{
+  font-family:var(--f-serif) !important;
+  font-weight:600;
+  letter-spacing:-.01em;
+}
+body.tema-cartorio h1 small{
+  font-family:var(--f-mono) !important;
+  font-weight:400;
+  letter-spacing:.04em;
+}
+/* tela de login: marca editorial + cartão com sombra de protocolo */
+body.tema-cartorio .cartao h1{
+  font-style:italic;
+  font-weight:600;
+}
+body.tema-cartorio .cartao{
+  border:2px solid var(--tx);
+  box-shadow:6px 6px 0 rgba(34,28,18,.14);
+}
+body.tema-cartorio .sec,
+body.tema-cartorio h2, body.tema-cartorio h3{
+  font-family:var(--f-serif);
+  font-style:italic;
+  font-weight:600;
+  text-transform:none;
+  letter-spacing:.01em;
+  color:var(--tx);
+  font-size:19px;
+}
+body.tema-cartorio .sec{ font-size:20px; }
+
+/* datas, números, siglas: cara de protocolo */
+body.tema-cartorio .quando,
+body.tema-cartorio .data,
+body.tema-cartorio .base,
+body.tema-cartorio .meta,
+body.tema-cartorio .badge,
+body.tema-cartorio code,
+body.tema-cartorio .mono{
+  font-family:var(--f-mono);
+}
+
+/* ---------- navegação: tabs viram rubricas ---------- */
+body.tema-cartorio a{ color:var(--acento); }
+
+/* ---------- KPIs: rubricas de documento ---------- */
+body.tema-cartorio .kpi{
+  background:var(--card);
+  border:1px solid var(--linha);
+  border-radius:0;
+  position:relative;
+  transition:background .18s;
+}
+body.tema-cartorio .kpi:hover{ background:var(--card2); }
+body.tema-cartorio .kpi::before{
+  content:""; position:absolute; top:0; left:16px; width:26px; height:3px;
+  background:var(--tx); opacity:.55;
+}
+body.tema-cartorio .kpi b{
+  font-family:var(--f-mono);
+  font-weight:600;
+  letter-spacing:-.04em;
+}
+body.tema-cartorio .kpi span{
+  font-family:var(--f-mono);
+  font-size:10px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  font-weight:600;
+}
+
+/* ---------- listas tipo livro-razão (.er, .prio, .item…) ---------- */
+body.tema-cartorio .er,
+body.tema-cartorio .prio,
+body.tema-cartorio .item,
+body.tema-cartorio .grp,
+body.tema-cartorio .hitem{
+  background:transparent;
+  border:0;
+  border-bottom:1px solid var(--linha);
+  border-left:3px solid transparent;
+  border-radius:0;
+  transition:background .15s, padding-left .18s;
+}
+body.tema-cartorio .er:hover,
+body.tema-cartorio .prio:hover,
+body.tema-cartorio .item:hover{
+  background:rgba(34,28,18,.035);
+}
+/* os faróis por classe viram losangos da cor do estado */
+body.tema-cartorio .er.acao{ border-left-color:var(--acao); }
+body.tema-cartorio .er.vencido{ border-left-color:var(--ruim); }
+body.tema-cartorio .er.atencao{ border-left-color:var(--at); }
+body.tema-cartorio .er.ok{ border-left-color:rgba(74,124,67,.45); }
+/* faróis losangulares — a assinatura do Cartório */
+body.tema-cartorio .dot,
+body.tema-cartorio .tldot{
+  border-radius:0 !important;
+  transform:rotate(45deg);
+}
+/* marcadores de linha mantêm a cor por classe, sem pílulas */
+body.tema-cartorio .tagN{
+  background:transparent;
+  border:0;
+  border-radius:0;
+  font-family:var(--f-mono);
+  font-size:10.5px;
+  letter-spacing:.06em;
+}
+body.tema-cartorio .pill{
+  border-radius:0;
+  font-family:var(--f-mono);
+}
+
+/* ---------- cartões e painéis: bordas de documento ---------- */
+body.tema-cartorio .card,
+body.tema-cartorio .painel,
+body.tema-cartorio .box,
+body.tema-cartorio .cartao,
+body.tema-cartorio .bloco,
+body.tema-cartorio .hit,
+body.tema-cartorio .inst,
+body.tema-cartorio .lat,
+body.tema-cartorio .proc,
+body.tema-cartorio .row,
+body.tema-cartorio .chip{
+  background:var(--card);
+  border:1px solid var(--linha);
+  border-radius:0;
+  box-shadow:3px 3px 0 rgba(34,28,18,.07);
+}
+/* bolhas de chat do guia: mantêm o formato de diálogo, viram papel */
+body.tema-cartorio .bolha{
+  background:var(--card);
+  border:1px solid var(--linha);
+  color:var(--tx);
+}
+/* cores de fundo escuras "hard-coded" que escapam dos tokens */
+body.tema-cartorio .desc{
+  filter:none;
+}
+
+/* ---------- tradução de cores literais do tema escuro ---------- */
+/* fundos escuros → papel */
+body.tema-cartorio .bloco,
+body.tema-cartorio .barra,
+body.tema-cartorio .resposta,
+body.tema-cartorio .manual,
+body.tema-cartorio .aviso,
+body.tema-cartorio .arm{
+  background:var(--card) !important;
+  border-color:var(--linha) !important;
+  color:var(--tx);
+}
+/* textos azul-claro/verde-claro literais → tinta */
+body.tema-cartorio .resp, body.tema-cartorio .respfoot,
+body.tema-cartorio .hm, body.tema-cartorio .hq{ color:var(--tx); }
+/* superfícies de destaque escuras recorrentes */
+body.tema-cartorio .proclog,
+body.tema-cartorio .contexto,
+body.tema-cartorio .nota{
+  background:var(--card2) !important;
+  border-color:var(--linha) !important;
+  color:var(--dim) !important;
+}
+/* barra fixa de ação (config) */
+body.tema-cartorio .barra-aplicar,
+body.tema-cartorio .barra-aprov{
+  background:var(--card) !important;
+  border:1px solid var(--acento) !important;
+  border-radius:0 !important;
+  box-shadow:5px 5px 0 rgba(34,28,18,.15) !important;
+}
+/* modais */
+body.tema-cartorio #mbox{
+  border-radius:0;
+  border:2px solid var(--tx);
+  box-shadow:8px 8px 0 rgba(34,28,18,.18);
+}
+
+/* ---------- tabelas: régua de cartório ---------- */
+body.tema-cartorio table{ border-collapse:collapse; }
+body.tema-cartorio th{
+  font-family:var(--f-mono);
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  font-weight:600;
+  color:var(--dim);
+  border-bottom:2px solid var(--tx) !important;
+}
+body.tema-cartorio td{
+  border-bottom:1px solid var(--linha) !important;
+}
+body.tema-cartorio tbody tr{ transition:background .12s; }
+body.tema-cartorio tbody tr:hover{ background:rgba(34,28,18,.03); }
+
+/* ---------- formulários: papel com filete ---------- */
+body.tema-cartorio input:not([type=checkbox]):not([type=radio]),
+body.tema-cartorio select,
+body.tema-cartorio textarea{
+  background:var(--card);
+  border:1px solid var(--linha);
+  border-radius:0;
+  color:var(--tx);
+  font-family:var(--f-sans);
+  transition:border-color .15s, box-shadow .15s;
+}
+body.tema-cartorio input:focus,
+body.tema-cartorio select:focus,
+body.tema-cartorio textarea:focus{
+  border-color:var(--tx);
+  outline:none;
+  box-shadow:3px 3px 0 rgba(34,28,18,.12);
+}
+body.tema-cartorio input::placeholder,
+body.tema-cartorio textarea::placeholder{ color:var(--dim); opacity:.75; }
+
+/* botões: carimbo retangular */
+body.tema-cartorio button,
+body.tema-cartorio .btn,
+body.tema-cartorio input[type=submit]{
+  font-family:var(--f-mono);
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  border-radius:0;
+  cursor:pointer;
+  transition:transform .12s, box-shadow .12s;
+}
+/* botões primários pintados com a cor do tema escuro → selo do Cartório */
+body.tema-cartorio button:not(.link):not(.op),
+body.tema-cartorio .btn.prim,
+body.tema-cartorio input[type=submit]{
+  background:var(--tx) !important;
+  color:var(--bg) !important;
+  border:1px solid var(--tx) !important;
+}
+body.tema-cartorio button:not(.link):not(.op):hover,
+body.tema-cartorio input[type=submit]:hover{
+  background:var(--selo) !important;
+  border-color:var(--selo) !important;
+}
+body.tema-cartorio button:hover,
+body.tema-cartorio .btn:hover{
+  transform:translate(-1px,-1px);
+  box-shadow:3px 3px 0 rgba(34,28,18,.18);
+}
+body.tema-cartorio button:active,
+body.tema-cartorio .btn:active{
+  transform:translate(0,0);
+  box-shadow:none;
+}
+
+/* ---------- chips / tags de fase ---------- */
+body.tema-cartorio .chip,
+body.tema-cartorio .tag,
+body.tema-cartorio .fase,
+body.tema-cartorio .chip-reg{
+  border-radius:0;
+  font-family:var(--f-mono);
+  letter-spacing:.06em;
+}
+
+/* ---------- rodapé ---------- */
+body.tema-cartorio footer{
+  border-top:2px solid var(--tx);
+  font-family:var(--f-mono);
+  font-size:11px;
+  letter-spacing:.03em;
+}
+
+/* ---------- scrollbar discreta em tom papel ---------- */
+body.tema-cartorio ::-webkit-scrollbar{ width:10px; height:10px; }
+body.tema-cartorio ::-webkit-scrollbar-track{ background:var(--bg); }
+body.tema-cartorio ::-webkit-scrollbar-thumb{ background:var(--linha); border:2px solid var(--bg); }
+body.tema-cartorio ::-webkit-scrollbar-thumb:hover{ background:var(--dim); }
+
+/* ---------- extras desta leva: classes novas (mesa F2/F3, guia chat) que
+   nasceram depois do skin base e traziam fundo escuro hardcoded ---------- */
+body.tema-cartorio .f2{ background:var(--card2)!important; border-left-color:var(--acento)!important;
+  color:var(--dim); box-shadow:none; }
+body.tema-cartorio .f2 b{ color:var(--tx); }
+body.tema-cartorio .exig{ background:#f4ead0!important; color:#6b551f; border-left-color:var(--at)!important; }
+body.tema-cartorio .din .bar{ background:#e6ddc7; }
+body.tema-cartorio .din .bar > i{ background:var(--ok); }
+body.tema-cartorio .mit:hover{ background:rgba(34,28,18,.05); }
+body.tema-cartorio .resp{ background:var(--card)!important; border:1px solid var(--linha)!important;
+  border-left:3px solid var(--ok)!important; color:var(--tx); box-shadow:3px 3px 0 rgba(34,28,18,.07); }
+body.tema-cartorio .resp.aviso{ background:#f4ead0!important; border-left-color:var(--at)!important; color:#6b551f; }
+body.tema-cartorio .resp b{ color:var(--tx); }
+body.tema-cartorio .fase.nula{ background:#f0e6cf!important; color:#8a6d1e!important; border-color:#d8c9a0!important; }
+body.tema-cartorio .cit{ color:var(--acento); }
