@@ -73,28 +73,53 @@ def _refresh_detru(fh):
 
 def _avisar_falha(nome: str, rc: int) -> None:
     """Cadeia parada = prazo sem vigilância. Falha silenciosa é o pior defeito
-    possível neste produto, então o vermelho sai do host e vai pro grupo."""
+    possível neste produto, então o vermelho sai do host.
+
+    Vai por TODOS os canais ligados, não só pelo grupo interno. Com o alerta de
+    andamento no WhatsApp de quem opera, "não chegou nada hoje" passa a ter dois
+    sentidos — "nada mudou" e "a cadeia morreu" — e só este aviso desempata. Foi
+    exatamente o que faltou em 22/07: o banco caiu, a cadeia parou no primeiro
+    elo e ninguém soube, porque o único canal cadastrado não estava configurado.
+    """
     sys.path.insert(0, str(RAIZ / "backend"))
+    texto = (f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc}).\n"
+             f"Os prazos NÃO foram recalculados hoje.\n"
+             f"journalctl --user -u tuiu-diario -n 50")
+    hoje = date.today().isoformat()
+    avisou = False
     try:
-        from app import seriema
+        from app import seriema, wpp_cloud
         from app.config import envio_externo_liberado
+        from app.db import conectar
 
         # respeita o interruptor: canal pausado não pode ser furado por aqui,
         # senão a pausa vale para o cliente e não para nós
-        if not envio_externo_liberado("seriema"):
-            print("[aviso] canal seriema desligado no painel — falha só no log", file=sys.stderr)
-            return
-        if not seriema.configurado():
-            print("[aviso] seriema não configurado — falha só no log", file=sys.stderr)
-            return
-        seriema.enviar_grupo(
-            f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc}).\n"
-            f"Os prazos NÃO foram recalculados hoje.\n"
-            f"journalctl --user -u tuiu-diario -n 50",
-            chave_entrega=f"cadeia-falhou-{date.today().isoformat()}-{nome}",
-        )
+        if envio_externo_liberado("seriema") and seriema.configurado():
+            seriema.enviar_grupo(texto, chave_entrega=f"cadeia-falhou-{hoje}-{nome}")
+            avisou = True
+
+        if envio_externo_liberado("whatsapp") and wpp_cloud.configurado():
+            with conectar() as con:
+                numeros = [e for (e,) in con.execute(
+                    "SELECT DISTINCT endereco FROM destinatarios WHERE ativo AND canal='whatsapp'")]
+            for numero in numeros:
+                # o template de andamento serve: {{1}} diz o que é, {{5}} o que fazer
+                ok, det = wpp_cloud.enviar_template(numero, [
+                    "FALHA NA CADEIA DIÁRIA", "Tuiú (aviso interno)", f"elo: {nome} (rc={rc})",
+                    "Os prazos NÃO foram recalculados hoje",
+                    "Ver: journalctl --user -u tuiu-diario -n 50", _br_hoje()])
+                avisou = avisou or ok
+                if not ok:
+                    print(f"[aviso] whatsapp {numero}: {det}", file=sys.stderr)
     except Exception as e:  # avisar nunca pode mascarar a falha original
         print(f"[aviso] falha ao notificar: {e}", file=sys.stderr)
+    if not avisou:
+        print("[aviso] NENHUM canal de alerta ativo — a falha fica só no log e no "
+              "`systemctl --user is-failed tuiu-diario`", file=sys.stderr)
+
+
+def _br_hoje() -> str:
+    return date.today().strftime("%d/%m/%Y")
 
 
 def main():

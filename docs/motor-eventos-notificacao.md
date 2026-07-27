@@ -28,20 +28,74 @@ recorte g2/detru  →  eventos.py (diff vs entidades_estado)  →  eventos
 |---|---|---|
 | `outbox` | sempre | — (persiste em `entregas`, status `pendente`) |
 | `webhook` | se `TUIU_WEBHOOK_URL` **ou** destinatário `canal='webhook'` | `TUIU_WEBHOOK_URL=https://seu-endpoint` |
-| `whatsapp` | se destinatário `canal='whatsapp'` **e** provider configurado | `TUIU_WPP_TOKEN`, `TUIU_WPP_PHONE_ID` (WhatsApp Cloud API própria) |
+| `whatsapp` | se destinatário `canal='whatsapp'` **e** Cloud API configurada | `TUIU_WPP_TOKEN`, `TUIU_WPP_PHONE_ID` (Cloud API oficial da Meta) |
+| `seriema` | grupo **interno** de operação — não chega ao cliente | `TUIU_SERIEMA_*` |
 
-- `TUIU_WPP_DRYRUN=1` monta o payload e **não** envia (teste).
-- **Não** usa a Seriema de produção do oasis.v2 (decisão do dono 18/07):
-  instância de notificação própria entra na **F5**; até lá, `webhook` já leva o
-  evento para onde o dono quiser (inclusive uma ponte WhatsApp própria).
-- Segredos ficam no cofre DPAPI / `.env` do repo — nunca no código.
+- `TUIU_WPP_DRYRUN=1` monta o payload e **não** envia (teste). O payload sai
+  inteiro no `detalhe` da entrega — é o que se confere antes de virar a chave.
+- **Não** usa a Seriema de produção do oasis.v2 (decisão do dono 18/07). E a
+  sessão Seriema não serviria para o caso do WhatsApp direto: ela só fala com
+  GRUPO (`isGroupJid` recusa qualquer outro JID). Por isso o canal `whatsapp` é
+  a **Cloud API oficial** (decisão do dono, 27/07) — `app/wpp_cloud.py`.
+- Segredos ficam no cofre DPAPI / `.env` do host — nunca no código.
+
+### Template (obrigatório para alerta proativo)
+
+Aviso de andamento cai **fora da janela de 24h**, e aí a Meta só entrega
+mensagem de template aprovado. Cadastrar no WhatsApp Manager como
+`tuiu_andamento`, categoria **UTILITY**, idioma **pt_BR**, corpo:
+
+```
+*Tuiú* · {{1}}
+
+*{{2}}*
+{{3}}
+{{4}}
+
+{{5}}
+
+_Transferegov · dados de {{6}} · D-1_
+```
+
+| | conteúdo | exemplo |
+|---|---|---|
+| `{{1}}` | tipo do evento | `mudança de andamento` |
+| `{{2}}` | cliente | `FUNDACAO FACULDADE DE MEDICINA` |
+| `{{3}}` | instrumento | `Convênio/CR 850704` |
+| `{{4}}` | transição | `Prestação de Contas em Análise → … em Complementação` |
+| `{{5}}` | o que fazer | `Prazo: 14/08/2026 (em 18d) · bola com o convenente · Próximo passo: …` |
+| `{{6}}` | data do dado | `25/07/2026` |
+
+⚠️ A Meta recusa parâmetro com quebra de linha, tabulação, 5+ espaços seguidos
+ou vazio (erro 132000). O parecer do órgão vem do CSV **com** `\n` e `\t`, então
+`wpp_cloud.limpar_parametro` normaliza tudo antes de enviar — a quebra de linha
+mora no corpo do template, nunca no valor. Travado em `teste_wpp_cloud.py`.
+
+### A mensagem se basta (sem link)
+
+Decisão do dono, 27/07: o console é loopback e não há URL que abra no celular,
+então a mensagem **não leva link para a mesa**. Em troca ela carrega o que
+decide — instrumento, transição, prazo, de quem é a bola, próximo passo e a
+exigência do órgão — puxados de `marcos` por `notificador.contexto()`.
 
 ### Destinatários
 
-`INSERT INTO destinatarios (cnpj, canal, endereco) VALUES ('*','whatsapp','5561999990000');`
-(`cnpj='*'` = todos os entes; ou o CNPJ específico). WhatsApp Cloud API fora da
-janela de 24h exige *template* aprovado — para alertas proativos, cadastrar um
-template e trocar o corpo `text` por `template` no `notificador._enviar_whatsapp`.
+```
+python ferramentas/destinatario.py --listar
+python ferramentas/destinatario.py --add 61999990000 --canal whatsapp   # '*' = carteira toda
+python ferramentas/destinatario.py --testar 5561999990000               # 1 mensagem, fora do motor
+```
+
+Cadastrar **não liga** o canal: continuam valendo as duas travas em série
+(`notificacoes_ativas` + `canal_whatsapp`), que se ligam em `/notificacoes.html`
+com autor e horário registrados.
+
+### Idempotência
+
+A entrega é **reservada e comitada antes do envio**. A Cloud API não tem dedup
+por chave (a sessão Seriema tinha), então sem a reserva uma queda no meio do
+laço faria o mesmo alerta tocar o telefone de alguém de novo no dia seguinte. O
+preço: entrega em `erro` não é retentada sozinha — reenvio é ato deliberado.
 
 ## API / tela
 
@@ -81,6 +135,26 @@ py -3 ingest/inbox/coletar_inbox.py --eml <pasta>     # inbox por .eml (teste)
 py -3 ingest/inbox/coletar_inbox.py                   # inbox por IMAP (env)
 py -3 backend/app/notificador.py                      # despacha
 py -3 ops/rodar_diario.py                             # cadeia inteira
+py -3 -m pytest testes/teste_wpp_cloud.py             # formato do template + autossuficiência
 py -3 testes/smoke_eventos.py                         # smoke diff (webhook + wpp dryrun)
 py -3 testes/smoke_inbox.py                           # smoke inbox (allowlist + atribuição)
+```
+
+## Quando o dado chega (e por que a cadeia é 09h30)
+
+`ops/sonda_atualizacao.py` mede, em vez de estimar. Dois sinais:
+
+- **detru (CSV)** — `Last-Modified` do HEAD dos ZIPs é a hora exata da
+  publicação, sem baixar os 300 MB. Medido em 27/07: **08:13 BRT**. É a fonte
+  que hoje produz quase todo evento (`convenio_legado`).
+- **g2 (API)** — `data_ultima_atualizacao` vem carimbado `T00:00:00`: diz de que
+  DIA é o dado, nunca a hora da carga. A hora sai do *flip* entre sondagens.
+
+Evidência indireta acumulada: em 19→27/07, às 09h36 o campo já mostrava o dia
+corrente e as 100 conferências de `verificar.py` batiam — a carga termina antes
+disso. A cadeia às 09h30 tem ~1h15 de folga sobre o detru.
+
+```
+py -3 ops/sonda_atualizacao.py            # uma sondagem (o timer chama assim)
+py -3 ops/sonda_atualizacao.py --resumo   # janelas medidas até agora
 ```

@@ -22,7 +22,7 @@ from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.carteira import ROTULOS, snapshot_mais_recente  # noqa: E402
+from app.carteira import ROTULOS, nomes_carteira, snapshot_mais_recente  # noqa: E402
 from app.db import conectar, migrar  # noqa: E402
 
 # Trackers de SITUAÇÃO: (domínio, caminho relativo, campo-chave, campo-situação, campo-rótulo)
@@ -116,6 +116,11 @@ def detectar(snap: Path | None = None) -> dict:
     if snap is None:
         raise SystemExit("sem recortes — rode o ingest antes")
     total = 0
+    # ROTULOS cobre 8 CNPJs escritos à mão; os outros 42 da carteira só têm nome
+    # em `clientes`, e o recorte do legado não traz razão social. Sem consultar
+    # os dois, o evento nascia intitulado "78350188000195" — e é esse título que
+    # vai inteiro para a mensagem do WhatsApp.
+    nomes = nomes_carteira()
     with conectar() as con:
         for sub in sorted(snap.iterdir()):
             cj = sub / "carteira.json"
@@ -123,7 +128,7 @@ def detectar(snap: Path | None = None) -> dict:
                 continue
             carteira = json.loads(cj.read_text(encoding="utf-8"))
             cnpj = carteira["cnpj"]
-            ente = ROTULOS.get(cnpj, carteira.get("nome") or cnpj)
+            ente = ROTULOS.get(cnpj) or nomes.get(cnpj) or carteira.get("nome") or cnpj
             for ev in _detectar_ente(con, cnpj, ente, sub, snap.name):
                 con.execute(
                     "INSERT INTO eventos (cnpj, ente, dominio, chave, rotulo, tipo, de, para, snapshot)"

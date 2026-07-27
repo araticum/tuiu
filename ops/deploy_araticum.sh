@@ -133,8 +133,45 @@ echo "  timer instalado:"
 systemctl --user list-timers tuiu-diario.timer --no-pager | head -3
 REMOTO
 
+echo "==> instalando a sonda de horário de carga (systemd --user, 04h-11h)"
+ssh "$HOST" "bash -s" <<'REMOTO'
+set -euo pipefail
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/tuiu-sonda.service <<'UNIT'
+[Unit]
+Description=Tuiu - sonda do horario de carga do Transferegov
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pedro/tuiu
+Environment=PYTHONUTF8=1
+ExecStart=/home/pedro/tuiu/.venv/bin/python ops/sonda_atualizacao.py
+TimeoutStartSec=300
+UNIT
+
+cat > ~/.config/systemd/user/tuiu-sonda.timer <<'UNIT'
+[Unit]
+Description=Tuiu - sonda o data-atualizacao a cada 10 min na janela da carga
+
+[Timer]
+# A carga cai nesta janela (detru medido as 08h13; g2 antes das 09h36). Sondar
+# o dia inteiro so gastaria requisicao para reconfirmar o que ja nao muda.
+OnCalendar=*-*-* 04..11:00/10:00
+Persistent=false
+UNIT
+
+systemctl --user daemon-reload
+systemctl --user enable --now tuiu-sonda.timer
+echo "  timer instalado:"
+systemctl --user list-timers tuiu-sonda.timer --no-pager | head -3
+REMOTO
+
 echo "==> pronto. Comandos úteis:"
 echo "   ssh ${HOST} 'systemctl --user list-timers tuiu-diario.timer'"
 echo "   ssh ${HOST} 'systemctl --user start tuiu-diario.service'   # rodar agora"
 echo "   ssh ${HOST} 'journalctl --user -u tuiu-diario -n 50'"
 echo "   ssh ${HOST} 'tail -n 40 ${DESTINO}/ops/logs/diario-\$(date +%F).log'"
+echo "   ssh ${HOST} '${DESTINO}/.venv/bin/python ${DESTINO}/ops/sonda_atualizacao.py --resumo'"
+echo "   ssh ${HOST} '${DESTINO}/.venv/bin/python ${DESTINO}/ferramentas/destinatario.py --listar'"

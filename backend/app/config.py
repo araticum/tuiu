@@ -63,7 +63,7 @@ def gravar(chave: str, valor: str, quem: str | None = None) -> dict:
 
 def estado() -> dict:
     """Estado + diagnóstico: o que está ligado E o que de fato conseguiria sair."""
-    from app import seriema
+    from app import seriema, wpp_cloud
 
     with conectar() as con:
         linhas = con.execute(
@@ -93,7 +93,10 @@ def estado() -> dict:
             "whatsapp": {
                 "ligado": chaves.get("canal_whatsapp", {}).get("ligado", False),
                 "destinatarios": dict(dest).get("whatsapp", 0),
-                "alcance": "CLIENTE — número cadastrado em `destinatarios`",
+                "configurado": wpp_cloud.configurado(), "dry_run": wpp_cloud.dry_run(),
+                "template": wpp_cloud.template_nome(),
+                "alcance": "CLIENTE — Cloud API oficial da Meta, número em `destinatarios`",
+                "falta": wpp_cloud.falta(),
             },
             "webhook": {
                 "ligado": chaves.get("canal_webhook", {}).get("ligado", False),
