@@ -29,7 +29,34 @@ recorte g2/detru  →  eventos.py (diff vs entidades_estado)  →  eventos
 | `outbox` | sempre | — (persiste em `entregas`, status `pendente`) |
 | `webhook` | se `TUIU_WEBHOOK_URL` **ou** destinatário `canal='webhook'` | `TUIU_WEBHOOK_URL=https://seu-endpoint` |
 | `whatsapp` | se destinatário `canal='whatsapp'` **e** Cloud API configurada | `TUIU_WPP_TOKEN`, `TUIU_WPP_PHONE_ID` (Cloud API oficial da Meta) |
-| `seriema` | grupo **interno** de operação — não chega ao cliente | `TUIU_SERIEMA_*` |
+| `seriema` | **EQUIPE** — aviso interno, não chega ao cliente | `TUIU_SERIEMA_PROVIDER` + o do transporte |
+
+### Quem recebe hoje: a EQUIPE (decisão do dono, 27/07)
+
+No período de testes o alvo é a **nossa organização interna**, não o cliente.
+Notificação a cliente só na expansão e **com autorização de mais números** —
+até lá `canal_whatsapp` fica desligado e `destinatarios` vazio.
+
+Ou seja: o canal em uso é o `seriema`, no transporte `cloud_api`.
+
+### Dois transportes do canal interno
+
+| | `internal_session` (padrão) | `cloud_api` |
+|---|---|---|
+| Como | HMAC v1 no sidecar de sessão | API oficial da Meta |
+| Destino | um GRUPO (`@g.us`) | cada número de `TUIU_SERIEMA_CLOUD_DESTINOS` |
+| Precisa | sidecar de pé | só o `TUIU_WPP_*` que o canal do cliente já usa |
+
+A Cloud API **não envia para grupo** — lá "o grupo" vira a lista de quem opera.
+E o sidecar nunca subiu no araticum, o que deixava este canal inerte e o alarme
+de cadeia quebrada mudo (o buraco de 22/07). Com `cloud_api` o aviso interno sai
+sem sidecar nenhum, reusando o mesmo número e o mesmo token do canal do cliente
+— prefixo próprio de credencial criaria duas verdades que divergem caladas no
+dia em que uma for rotacionada.
+
+Transporte desconhecido cai na sessão: um typo no env não pode redirecionar
+aviso interno. Fan-out **falha se qualquer destino falhar** — aviso que chega
+pela metade é aviso quebrado. Travado em `testes/teste_seriema_nuvem.py`.
 
 - `TUIU_WPP_DRYRUN=1` monta o payload e **não** envia (teste). O payload sai
   inteiro no `detalhe` da entrega — é o que se confere antes de virar a chave.

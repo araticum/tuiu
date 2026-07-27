@@ -222,7 +222,11 @@ def _enviar(canal: str, endereco: str, ev: dict, msg: str, ctx: dict) -> tuple[b
         # alerta proativo -> template aprovado; ver app/wpp_cloud.py
         return wpp_cloud.enviar_template(endereco, parametros_template(ev, ctx))
     if canal == "seriema":
-        return seriema.enviar_grupo(msg, chave_entrega=f"evento-{ev['id']}")
+        # os campos vão estruturados: no transporte de nuvem o texto formatado
+        # não serve (template não aceita quebra de linha) e remontá-lo de volta
+        # em campos seria adivinhação
+        return seriema.enviar_grupo(msg, chave_entrega=f"evento-{ev['id']}",
+                                    parametros=parametros_template(ev, ctx))
     return False, f"canal desconhecido: {canal}"
 
 

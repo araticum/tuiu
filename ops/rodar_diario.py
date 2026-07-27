@@ -95,9 +95,15 @@ def _avisar_falha(nome: str, rc: int) -> None:
 
         # respeita o interruptor: canal pausado não pode ser furado por aqui,
         # senão a pausa vale para o cliente e não para nós
+        campos = ["Tuiú (aviso interno, não é de cliente)",
+                  f"cadeia diária — elo {nome} (rc={rc})",
+                  "FALHA: os prazos NÃO foram recalculados hoje",
+                  f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
+                  CONSOLE_URL]
+
         if envio_externo_liberado("seriema") and seriema.configurado():
-            seriema.enviar_grupo(texto, chave_entrega=f"cadeia-falhou-{hoje}-{nome}")
-            avisou = True
+            avisou, _ = seriema.enviar_grupo(texto, chave_entrega=f"cadeia-falhou-{hoje}-{nome}",
+                                             parametros=campos)
 
         if envio_externo_liberado("whatsapp") and wpp_cloud.configurado():
             with conectar() as con:
@@ -105,12 +111,7 @@ def _avisar_falha(nome: str, rc: int) -> None:
                     "SELECT DISTINCT endereco FROM destinatarios WHERE ativo AND canal='whatsapp'")]
             for numero in numeros:
                 # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
-                ok, det = wpp_cloud.enviar_template(numero, [
-                    "Tuiú (aviso interno, não é de cliente)",
-                    f"cadeia diária — elo {nome} (rc={rc})",
-                    "FALHA: os prazos NÃO foram recalculados hoje",
-                    f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
-                    CONSOLE_URL])
+                ok, det = wpp_cloud.enviar_template(numero, campos)
                 avisou = avisou or ok
                 if not ok:
                     print(f"[aviso] whatsapp {numero}: {det}", file=sys.stderr)

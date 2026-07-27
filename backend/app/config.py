@@ -87,8 +87,12 @@ def estado() -> dict:
             "seriema": {
                 "ligado": chaves.get("canal_seriema", {}).get("ligado", False),
                 "configurado": seriema.configurado(), "dry_run": seriema.dry_run(),
-                "alcance": "grupo interno de operação (não chega ao cliente)",
-                "falta": None if seriema.configurado() else "TUIU_SERIEMA_BASE_URL e TUIU_SERIEMA_SECRET no host",
+                "transporte": seriema.provedor(),
+                "destinos": len(seriema.destinos_nuvem()),
+                "alcance": "EQUIPE — grupo interno de operação (não chega ao cliente)",
+                # o próprio cliente responde: com dois transportes, texto fixo
+                # aqui vira mentira na tela de quem opera
+                "falta": seriema.falta_config(),
             },
             "whatsapp": {
                 "ligado": chaves.get("canal_whatsapp", {}).get("ligado", False),

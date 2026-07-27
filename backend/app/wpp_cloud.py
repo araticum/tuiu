@@ -20,7 +20,7 @@ Config (env / .env / cofre DPAPI):
     TUIU_WPP_WABA_ID    id da conta (só para submeter/listar template)
     TUIU_WPP_TEMPLATE   nome do template aprovado (default aviso_tuiu_andamento)
     TUIU_WPP_IDIOMA     código de idioma do template (default pt_BR)
-    TUIU_WPP_VERSAO     versão da Graph API (default v21.0)
+    TUIU_WPP_VERSAO     versão da Graph API (default v23.0)
     TUIU_WPP_DRYRUN=1   monta o payload e não envia (teste)
 
 Sem token/phone_id o canal fica inativo e o evento segue só na outbox.
@@ -98,7 +98,7 @@ def _post(payload: dict, timeout: float) -> tuple[bool, str]:
         # tamanho já é limitado por LIMITE_PARAMETRO.
         return True, "DRYRUN " + corpo.decode("utf-8", "replace")
 
-    url = f"{BASE_GRAPH}/{_cfg('TUIU_WPP_VERSAO', 'v21.0')}/{_cfg('TUIU_WPP_PHONE_ID')}/messages"
+    url = f"{BASE_GRAPH}/{_cfg('TUIU_WPP_VERSAO', 'v23.0')}/{_cfg('TUIU_WPP_PHONE_ID')}/messages"
     req = urllib.request.Request(url, data=corpo, method="POST", headers={
         "Authorization": f"Bearer {_cfg('TUIU_WPP_TOKEN')}",
         "Content-Type": "application/json",
