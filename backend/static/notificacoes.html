@@ -55,12 +55,20 @@
 
 <script>
 const ROTULOS = {
-  seriema:  { nome: "Seriema (WhatsApp)", classe: "interno",
-              desc: "Mensagem no grupo de operação da casa, via sessão própria." },
+  seriema:  { nome: "WhatsApp da equipe", classe: "interno",
+              desc: "Aviso interno de operação. Não chega ao cliente." },
   whatsapp: { nome: "WhatsApp direto ao cliente", classe: "cliente",
               desc: "Cloud API, para os números cadastrados em `destinatarios`." },
   webhook:  { nome: "Webhook", classe: "externo",
               desc: "POST JSON para um sistema externo." },
+};
+
+// Dois transportes para o canal da equipe: a Cloud API não fala com grupo, então
+// lá "o grupo" é a lista de números. Quem vai ligar a chave precisa ver POR ONDE
+// vai sair e PARA QUANTOS — ligar sem isso é o mesmo que ligar às cegas.
+const TRANSPORTE = {
+  cloud_api:        "Cloud API oficial da Meta, um por número da equipe",
+  internal_session: "Sessão própria (sidecar), mensagem em grupo",
 };
 
 async function carregar() {
@@ -90,7 +98,14 @@ async function carregar() {
     const meta = ROTULOS[id] || { nome: id, classe: "externo", desc: "" };
     const impedido = c.configurado === false;
     let nota = `<div class="alcance ${meta.classe}">Alcance: ${c.alcance}</div>`;
+    if (c.transporte)
+      nota += `<div class="alcance">Transporte: <b>${c.transporte}</b>`
+            + (TRANSPORTE[c.transporte] ? ` — ${TRANSPORTE[c.transporte]}` : "")
+            + (c.destinos != null ? ` · <b>${c.destinos}</b> destino(s) na equipe` : "")
+            + `</div>`;
     if (impedido) nota += `<div class="bloq">Não configurado — falta ${c.falta}. Ligar aqui não faz efeito.</div>`;
+    if (id === "seriema" && c.transporte === "cloud_api" && c.destinos === 0)
+      nota += `<div class="bloq">Nenhum número da equipe em TUIU_SERIEMA_CLOUD_DESTINOS: ligar não envia nada.</div>`;
     if (c.destinatarios === 0 && id !== "seriema")
       nota += `<div class="bloq">Nenhum destinatário ativo cadastrado: ligar não envia nada.</div>`;
     if (c.dry_run) nota += `<div class="bloq">DRY-RUN ativo: monta a mensagem e não envia.</div>`;

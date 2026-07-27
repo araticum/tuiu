@@ -148,6 +148,33 @@ def janela_aberta(numero: str) -> bool:
         return False
 
 
+WAMID = __import__("re").compile(r"wamid\.[A-Za-z0-9+/=_-]+")
+
+
+def recibos(detalhes: list[str | None]) -> dict[str, dict]:
+    """wamid -> último recibo da Meta, para os wamids citados em `entregas.detalhe`.
+
+    `enviado` só diz que a Meta ACEITOU a mensagem; entregue e lido só se sabe
+    pelo webhook. Sem isto o console mostrava "enviado" para sempre, inclusive
+    quando o aparelho do destinatário nunca recebeu.
+
+    O wamid é extraído do texto porque é onde ele está: o `detalhe` guarda o
+    retorno cru do provedor, e no fan-out da equipe são vários numa linha só.
+    """
+    ids = {m for d in detalhes for m in WAMID.findall(d or "")}
+    if not ids:
+        return {}
+    try:
+        with conectar() as con:
+            linhas = con.execute(
+                "SELECT DISTINCT ON (wamid) wamid, status, erro, recebido_em FROM wpp_entrada"
+                " WHERE tipo='status' AND wamid = ANY(%s)"
+                " ORDER BY wamid, recebido_em DESC", (list(ids),)).fetchall()
+    except Exception:  # noqa: BLE001 — recibo é enfeite, não pode derrubar a tela
+        return {}
+    return {w: {"status": s, "erro": e, "em": r.isoformat()} for w, s, e, r in linhas}
+
+
 def quem_escreveu(horas: int = 168) -> list[dict]:
     """Quem mandou mensagem para o número, e quando. Sem conteúdo — não existe."""
     limite = datetime.now(timezone.utc) - timedelta(hours=horas)

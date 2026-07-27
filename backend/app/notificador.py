@@ -266,12 +266,13 @@ def despachar() -> dict:
     with conectar() as con:
         # eventos ainda sem NENHUMA entrega
         eventos = con.execute(
-            "SELECT id, cnpj, ente, dominio, chave, rotulo, tipo, de, para, snapshot::text, origem, detalhe"
+            "SELECT id, cnpj, ente, dominio, chave, rotulo, instrumento, tipo, de, para,"
+            " snapshot::text, origem, detalhe"
             " FROM eventos e WHERE NOT EXISTS (SELECT 1 FROM entregas x WHERE x.evento_id=e.id)"
             "   AND cnpj <> 'nao_atribuido'"
             " ORDER BY id").fetchall()
-        cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo", "de", "para",
-                "snapshot", "origem", "detalhe"]
+        cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "instrumento", "tipo",
+                "de", "para", "snapshot", "origem", "detalhe"]
         # o `ente` gravado no evento pode ser o CNPJ cru (eventos criados antes do
         # fix de 27/07) — resolver AQUI conserta o que já está na base, sem
         # reescrever histórico
@@ -279,8 +280,11 @@ def despachar() -> dict:
         for row in eventos:
             ev = dict(zip(cols, row))
             ev["ente"] = nome_exibicao(ev["cnpj"], ev["ente"], nomes)
-            # a chave do evento de situação É o nº do instrumento; contador não tem
-            ctx = contexto(con, ev["cnpj"], ev["chave"]) if ev["chave"] != "#count" else {}
+            # `instrumento` é a chave que casa com `marcos` — e não é sempre a
+            # chave do diff (na parceria, o marco é indexado pela PROPOSTA). Cai
+            # na chave para os eventos gravados antes de db/0027.
+            ctx = ({} if ev["chave"] == "#count"     # contador não tem instrumento
+                   else contexto(con, ev["cnpj"], ev["instrumento"] or ev["chave"]))
             msg = mensagem(ev, ctx)
 
             if _registrar(con, ev["id"], "outbox", None, msg, "pendente"):

@@ -117,6 +117,16 @@ async def exigir_sessao(request: Request, call_next):
             and caminho not in ("/api/logout", "/api/senha", "/api/perfil/login"):
         return JSONResponse({"erro": "somente leitura"}, status_code=403)
 
+    # Notificações são de OPERADOR (decisão do dono, 27/07). A tela mostra os
+    # NÚMEROS de celular de quem opera e o estado dos canais: é superfície de
+    # operação, não de leitura. `cliente` já não alcança (não está em
+    # PERMISSOES_CLIENTE); esta trava fecha para `leitor`, que hoje lê tudo.
+    if (caminho.startswith("/api/notificacoes") or caminho == "/notificacoes.html") \
+            and usuario.get("papel") != "operador":
+        if caminho.startswith("/api/"):
+            return JSONResponse({"erro": "so operador"}, status_code=403)
+        return RedirectResponse("/", status_code=303)
+
     # Configurar a plataforma (situações, ações) é de ADMIN — Pedro e Danilo.
     # Operador comum opera; admin calibra o motor. Fecha para todo o resto.
     if (caminho.startswith("/api/config") or caminho == "/config.html") \
@@ -430,7 +440,15 @@ def entregas(canal: str | None = None):
             sql += " ORDER BY e.id DESC LIMIT 100"
             cols = ["id", "canal", "endereco", "mensagem", "status", "detalhe",
                     "criado_em", "enviado_em"]
-            return {"disponivel": True, "entregas": [dict(zip(cols, r)) for r in con.execute(sql, args)]}
+            linhas = [dict(zip(cols, r)) for r in con.execute(sql, args)]
+
+        # `enviado` só diz que a Meta aceitou. Entregue/lido vem do webhook.
+        from app.wpp_webhook import WAMID, recibos
+        mapa = recibos([l["detalhe"] for l in linhas])
+        for l in linhas:
+            recibo = [mapa[m] for m in WAMID.findall(l["detalhe"] or "") if m in mapa]
+            l["recibo"] = max(recibo, key=lambda r: r["em"]) if recibo else None
+        return {"disponivel": True, "entregas": linhas}
     except Exception as exc:  # noqa: BLE001
         return {"disponivel": False, "erro": str(exc), "entregas": []}
 
