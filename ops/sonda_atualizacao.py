@@ -22,8 +22,14 @@ Uso:
     py -3 ops/sonda_atualizacao.py            # uma sondagem (o timer chama assim)
     py -3 ops/sonda_atualizacao.py --resumo   # o que já foi medido
 
-Timer no host (a cada 10 min na janela da madrugada/manhã):
-    OnCalendar=*-*-* 04..11:00/10:00
+⚠️ **O host dorme das 02h30 às 05h30** (box_rest, medido em `last -x reboot`).
+Não existe sondagem nesse intervalo, então flip que caia ali só pode ser
+CERCADO, nunca medido. O `--resumo` declara essa janela cega — apresentar a
+incerteza como precisão seria pior do que não medir.
+
+Timer no host (ver ops/deploy_araticum.sh):
+    OnCalendar=*-*-* 05..11:00/10:00          # manhã fina, onde a carga cai
+    OnCalendar=*-*-* 00..02,12..23:00/30:00   # resto acordado, estreita o cego
 """
 
 from __future__ import annotations
@@ -84,6 +90,10 @@ def sondar() -> dict:
     return leitura
 
 
+def _horas_entre(a: str, b: str) -> float:
+    return abs((datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds()) / 3600
+
+
 def _leituras() -> list[dict]:
     if not DIARIO.exists():
         return []
@@ -96,7 +106,9 @@ def resumo() -> None:
         print(f"nada medido ainda — rode a sonda (diário: {DIARIO})")
         return
 
-    print(f"{len(leituras)} sondagens · {leituras[0]['em'][:16]} -> {leituras[-1]['em'][:16]}\n")
+    print(f"{len(leituras)} sondagens · {leituras[0]['em'][:16]} -> {leituras[-1]['em'][:16]}")
+    print("janela CEGA: 02h30-05h30 (o host desliga) — flip nesse intervalo só "
+          "pode ser cercado, nunca medido\n")
 
     # g2: a hora da carga está entre a última leitura com o valor antigo e a
     # primeira com o novo. Uma janela por dia, por domínio.
@@ -109,8 +121,14 @@ def resumo() -> None:
             if not valor or valor.startswith("erro"):
                 continue
             if anterior and valor != anterior[1]:
+                # a incerteza é o buraco entre as duas sondagens; se ele engoliu
+                # o sono do host, dizer isso em voz alta — janela de 6h anunciada
+                # como medição é pior do que não ter medido
+                horas = _horas_entre(anterior[0], leit["em"])
+                aviso = "  ⚠ atravessa o sono do host (02h30-05h30)" if horas > 1 else ""
                 print(f"  {dominio:10s} {anterior[1][:10]} -> {valor[:10]} "
-                      f"entre {anterior[0][11:16]} e {leit['em'][11:16]} ({leit['em'][:10]})")
+                      f"entre {anterior[0][11:16]} e {leit['em'][11:16]} "
+                      f"({leit['em'][:10]}, ±{horas:.1f}h){aviso}")
                 achou = True
             anterior = (leit["em"], valor)
         if not achou:

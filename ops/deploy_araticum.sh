@@ -156,13 +156,22 @@ UNIT
 
 cat > ~/.config/systemd/user/tuiu-sonda.timer <<'UNIT'
 [Unit]
-Description=Tuiu - sonda o data-atualizacao a cada 10 min na janela da carga
+Description=Tuiu - sonda o horario de carga (host dorme 02h30-05h30)
 
 [Timer]
-# A carga cai nesta janela (detru medido as 08h13; g2 antes das 09h36). Sondar
-# o dia inteiro so gastaria requisicao para reconfirmar o que ja nao muda.
-OnCalendar=*-*-* 04..11:00/10:00
-Persistent=false
+# 🔴 O HOST DESLIGA 02h30-05h30 TODO DIA (box_rest). A primeira versao disto
+# sondava 04h-11h e as batidas de 04h00 a 05h20 simplesmente nao aconteciam —
+# com a ultima do dia anterior as 11h, um flip de madrugada seria "medido" com
+# 18h de incerteza. Numero inutil, entregue sem aviso.
+#
+# Manha fina (a carga conhecida cai ai: detru medido as 08h13):
+OnCalendar=*-*-* 05..11:00/10:00
+# Resto do tempo acordado, grosso: nao mede a hora exata, mas ESTREITA a janela
+# cega. Uma batida as 02h00 dizendo "ainda e ontem" reduz a incerteza de 18h
+# para 3h30 — o maximo que da para saber numa maquina que dorme.
+OnCalendar=*-*-* 00..02,12..23:00/30:00
+# recupera a batida perdida no boot: da uma leitura logo as 05h30
+Persistent=true
 
 [Install]
 WantedBy=timers.target
