@@ -90,26 +90,15 @@ def _avisar_falha(nome: str, rc: int) -> None:
              f"Os prazos NÃO foram recalculados hoje.\n"
              f"journalctl --user -u tuiu-diario -n 50")
     hoje = date.today().isoformat()
-    avisou, detalhe = False, "canal desligado ou não configurado"
-    try:
-        from app import seriema
-        from app.config import envio_externo_liberado
-        from app.notificador import CONSOLE_URL
-
-        # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
-        campos = ["Tuiú (aviso interno, não é de cliente)",
-                  f"cadeia diária — elo {nome} (rc={rc})",
-                  "FALHA: os prazos NÃO foram recalculados hoje",
-                  f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
-                  CONSOLE_URL]
-
-        # respeita o interruptor: canal pausado não pode ser furado por aqui,
-        # senão a pausa vale para o cliente e não para nós
-        if envio_externo_liberado("seriema") and seriema.configurado():
-            avisou, detalhe = seriema.enviar_grupo(
-                texto, chave_entrega=f"cadeia-falhou-{hoje}-{nome}", parametros=campos)
-    except Exception as e:  # avisar nunca pode mascarar a falha original
-        detalhe = f"{type(e).__name__}: {e}"
+    # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
+    avisou, detalhe = _avisar(
+        texto,
+        ["Tuiú (aviso interno, não é de cliente)",
+         f"cadeia diária — elo {nome} (rc={rc})",
+         "FALHA: os prazos NÃO foram recalculados hoje",
+         f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
+         "https://tuiu.araticum.net"],
+        chave=f"cadeia-falhou-{hoje}-{nome}")
     if not avisou:
         print(f"[aviso] a equipe NÃO foi avisada ({detalhe}) — a falha fica só no log "
               f"e no `systemctl --user is-failed tuiu-diario`", file=sys.stderr)
@@ -117,6 +106,61 @@ def _avisar_falha(nome: str, rc: int) -> None:
 
 def _br_hoje() -> str:
     return date.today().strftime("%d/%m/%Y")
+
+
+def _conferir_frescor(fh) -> None:
+    """Dado velho passando por D-1 é a falha que mais custa neste produto.
+
+    `verificar.py` já mede o frescor e escreve em `_verificacao.json`, mas o
+    resultado só ia para o log: o exit code dele olha divergência, nunca
+    frescor. Ou seja, se a carga do Transferegov atrasar, a cadeia recalcula
+    prazo em cima de ontem-retrasado, emite evento e fecha "cadeia concluída"
+    — verde, e mentindo sobre a idade do dado.
+
+    Não interrompe: prazo é data, então um snapshot atrasado ainda produz marco
+    quase certo, e parar a cadeia tiraria a vigilância do dia inteiro. O que
+    faltava era a equipe SABER. Aqui ela sabe.
+    """
+    import json
+
+    arq = RAIZ / "data" / "recortes" / date.today().isoformat() / "_verificacao.json"
+    if not arq.exists():
+        _log(fh, "! conferencia sem _verificacao.json — frescor NAO conferido hoje")
+        return
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    fresco, resumo = d.get("snapshot_fresco"), d.get("resumo") or {}
+    divergem = int(resumo.get("divergem") or 0)
+    if fresco and not divergem:
+        _log(fh, f"OK dado fresco ({d.get('data_atualizacao_api', '')[:10]}), "
+                 f"{resumo.get('conferem')} conferencias batem")
+        return
+
+    motivo = []
+    if not fresco:
+        motivo.append(f"snapshot NAO fresco (API={str(d.get('data_atualizacao_api'))[:10]}, "
+                      f"recorte={d.get('snapshot')})")
+    if divergem:
+        motivo.append(f"{divergem} conferencia(s) DIVERGEM da g2 ao vivo")
+    _log(fh, "! " + " · ".join(motivo))
+    _avisar(f"⚠️ Tuiú — {' · '.join(motivo)}.\n"
+            f"A cadeia seguiu, mas o dado de hoje NÃO é D-1 confiável.",
+            ["Tuiú (aviso interno, não é de cliente)", "conferência de integridade",
+             " · ".join(motivo), "A cadeia seguiu — confira antes de agir no que saiu hoje",
+             _br_hoje()],
+            chave=f"frescor-{date.today().isoformat()}")
+
+
+def _avisar(texto: str, campos: list[str], chave: str) -> tuple[bool, str]:
+    """Manda para a EQUIPE pelo canal interno, respeitando os interruptores."""
+    sys.path.insert(0, str(RAIZ / "backend"))
+    try:
+        from app import seriema
+        from app.config import envio_externo_liberado
+        if not (envio_externo_liberado("seriema") and seriema.configurado()):
+            return False, "canal desligado ou não configurado"
+        return seriema.enviar_grupo(texto, chave_entrega=chave, parametros=campos)
+    except Exception as e:  # avisar nunca pode mascarar o que estava sendo avisado
+        return False, f"{type(e).__name__}: {e}"
 
 
 def main():
@@ -138,6 +182,9 @@ def main():
         _passo(fh, "regularidade do terceiro (CEPIM/CEIS/CNEP)",
                [py, "ingest/transparencia/coletar_regularidade.py"])
         _passo(fh, "conferencia de integridade (g2 ao vivo)", [py, "ingest/transferegov_g2/verificar.py"])
+        # o passo acima MEDE o frescor; este age sobre ele. Sem isto, dado velho
+        # atravessava a cadeia inteira e saía como D-1.
+        _conferir_frescor(fh)
         _passo(fh, "motor de prazos (marcos + alertas)", [py, "backend/app/motor_prazos.py"])
         _passo(fh, "execucao financeira por convenio (mesa)", [py, "backend/app/execucao.py"])
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])

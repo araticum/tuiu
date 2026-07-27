@@ -148,7 +148,13 @@ def login(corpo: dict, request: Request, response: Response):
         raise HTTPException(401, msg)
     response.set_cookie(
         auth.COOKIE, token, httponly=True, samesite="lax",
-        secure=os.environ.get("TUIU_COOKIE_SECURE") == "1",
+        # `Secure` é o PADRÃO, e desligar exige opt-in — mesma regra do
+        # TUIU_TLS_INSECURE. Antes era o contrário: só marcava Secure se
+        # TUIU_COOKIE_SECURE=1, variável que NUNCA existiu no host. O console
+        # está publicado em https com dado de 50 organizações reais, e o cookie
+        # de sessão saía sem a marca — bastava uma requisição http para ele
+        # viajar em claro. Fail-open é o oposto do resto desta base.
+        secure=os.environ.get("TUIU_COOKIE_INSEGURO") != "1",
         max_age=auth.DURACAO_SESSAO_H * 3600, path="/")
     return {"ok": True, **(auth.sessao_valida(token) or {})}
 
