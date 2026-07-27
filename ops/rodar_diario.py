@@ -104,11 +104,13 @@ def _avisar_falha(nome: str, rc: int) -> None:
                 numeros = [e for (e,) in con.execute(
                     "SELECT DISTINCT endereco FROM destinatarios WHERE ativo AND canal='whatsapp'")]
             for numero in numeros:
-                # o template de andamento serve: {{1}} diz o que é, {{5}} o que fazer
+                # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
                 ok, det = wpp_cloud.enviar_template(numero, [
-                    "FALHA NA CADEIA DIÁRIA", "Tuiú (aviso interno)", f"elo: {nome} (rc={rc})",
-                    "Os prazos NÃO foram recalculados hoje",
-                    "Ver: journalctl --user -u tuiu-diario -n 50", CONSOLE_URL, _br_hoje()])
+                    "Tuiú (aviso interno, não é de cliente)",
+                    f"cadeia diária — elo {nome} (rc={rc})",
+                    "FALHA: os prazos NÃO foram recalculados hoje",
+                    f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
+                    CONSOLE_URL])
                 avisou = avisou or ok
                 if not ok:
                     print(f"[aviso] whatsapp {numero}: {det}", file=sys.stderr)

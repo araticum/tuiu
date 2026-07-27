@@ -17,7 +17,8 @@ envio — dá para fechar o pipe hoje e só virar a chave quando a Meta liberar.
 Config (env / .env / cofre DPAPI):
     TUIU_WPP_TOKEN      token do System User do app — NUNCA no git
     TUIU_WPP_PHONE_ID   Phone Number ID do remetente (o id, não o telefone)
-    TUIU_WPP_TEMPLATE   nome do template aprovado (default tuiu_andamento)
+    TUIU_WPP_WABA_ID    id da conta (só para submeter/listar template)
+    TUIU_WPP_TEMPLATE   nome do template aprovado (default aviso_tuiu_andamento)
     TUIU_WPP_IDIOMA     código de idioma do template (default pt_BR)
     TUIU_WPP_VERSAO     versão da Graph API (default v21.0)
     TUIU_WPP_DRYRUN=1   monta o payload e não envia (teste)
@@ -54,7 +55,10 @@ def dry_run() -> bool:
 
 
 def template_nome() -> str:
-    return _cfg("TUIU_WPP_TEMPLATE", "tuiu_andamento")
+    # prefixo `aviso_` é a convenção da casa na mesma WABA (`aviso_veredas`).
+    # O nome curto `aviso_tuiu` está QUEIMADO até ~26/08/2026: foi excluído em
+    # 27/07 e a Meta segura nome de template apagado por até 30 dias.
+    return _cfg("TUIU_WPP_TEMPLATE", "aviso_tuiu_andamento")
 
 
 def falta() -> str | None:

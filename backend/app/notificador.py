@@ -146,22 +146,29 @@ def _br_iso(iso: str) -> str:
 
 
 def parametros_template(ev: dict, ctx: dict | None = None) -> list[str]:
-    """Os {{1}}..{{7}} do template `tuiu_andamento` (texto aprovado no doc).
+    """Os {{1}}..{{5}} do template `aviso_tuiu` (corpo em ferramentas/template_wpp.py).
 
     Uma linha por parâmetro: a Meta recusa quebra de linha dentro do valor, então
-    o contexto operacional inteiro entra concatenado no {{5}}.
+    o contexto operacional inteiro entra concatenado no {{4}}.
+
+    São CINCO — a Meta rejeita template com variáveis demais para o tamanho do
+    texto fixo (erro 2388293) e a versão de 7 foi recusada. Por isso o tipo do
+    evento vai junto da situação no {{3}} e a data do dado fecha o {{4}}: nada
+    saiu da mensagem, só mudou de campo.
     """
     ctx = ctx or {}
+    data = f"dados de {_br_iso(ev['snapshot'])}"
     if ev.get("origem") == "inbox":
         det = ev.get("detalhe") if isinstance(ev.get("detalhe"), dict) else {}
         prazos = (det or {}).get("prazos") or []
-        return ["notificação por e-mail", ev["ente"], ev["rotulo"],
-                (ev["para"] or "")[:200],
-                f"Prazo citado: {', '.join(prazos)}" if prazos else "—",
-                link_cliente(ev["cnpj"]), _br_iso(ev["snapshot"])]
-    return [TIPO_LEGIVEL.get(ev["tipo"], "andamento"), ev["ente"], ev["rotulo"],
-            _transicao(ev), " · ".join(_linhas_contexto(ctx)) or "—",
-            link_cliente(ev["cnpj"]), _br_iso(ev["snapshot"])]
+        prazo = f"Prazo citado: {', '.join(prazos)} · " if prazos else ""
+        return [ev["ente"], ev["rotulo"],
+                f"notificação por e-mail: {(ev['para'] or '')[:160]}",
+                f"{prazo}{data}", link_cliente(ev["cnpj"])]
+    return [ev["ente"], ev["rotulo"],
+            f"{TIPO_LEGIVEL.get(ev['tipo'], 'andamento')}: {_transicao(ev)}",
+            " · ".join(_linhas_contexto(ctx) + [data]),
+            link_cliente(ev["cnpj"])]
 
 
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> tuple[bool, str]:

@@ -16,7 +16,7 @@ Uso:
     python ferramentas/destinatario.py --add 61999990000 --canal whatsapp
     python ferramentas/destinatario.py --add https://... --canal webhook --cnpj 08949168000150
     python ferramentas/destinatario.py --desativar 5561999990000 --canal whatsapp
-    python ferramentas/destinatario.py --testar 5561999990000     # manda 1 msg agora
+    python ferramentas/destinatario.py --testar 5561999990000 --modo texto --evento ultimo
 """
 
 from __future__ import annotations
@@ -86,25 +86,73 @@ def desativar(endereco: str, canal: str) -> None:
     print(f"{n} destinatário(s) desativado(s)" if n else "nada encontrado com esse endereço")
 
 
-def testar(numero: str) -> None:
+EXEMPLO = ["mudança de andamento", "Fundação Exemplo", "Convênio/CR 999999",
+           "Prestação de Contas em Análise → Prestação de Contas em Complementação",
+           "Prazo: 14/08/2026 (em 18d) · bola com o convenente · Próximo passo: enviar a complementação",
+           "https://tuiu.araticum.net/cliente.html?doc=00000000000191", "27/07/2026"]
+
+
+def _evento(qual: str) -> tuple[dict, dict]:
+    """Um evento REAL da base + seu contexto — o teste mostra o que o pipe produz
+    de verdade, não um exemplo que sempre parece bonito."""
+    from app.notificador import contexto
+    cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo", "de", "para",
+            "snapshot", "origem", "detalhe"]
+    sql = ("SELECT id, cnpj, ente, dominio, chave, rotulo, tipo, de, para, snapshot::text,"
+           " origem, detalhe FROM eventos WHERE cnpj <> 'nao_atribuido'")
+    with conectar() as con:
+        linha = con.execute(
+            sql + (" ORDER BY id DESC LIMIT 1" if qual == "ultimo" else " AND id=%s"),
+            () if qual == "ultimo" else (int(qual),)).fetchone()
+        if not linha:
+            sys.exit(f"evento não encontrado: {qual}")
+        ev = dict(zip(cols, linha))
+        ctx = contexto(con, ev["cnpj"], ev["chave"]) if ev["chave"] != "#count" else {}
+    return ev, ctx
+
+
+def testar(numero: str, modo: str, evento: str | None) -> None:
     """Dispara UMA mensagem de verdade, fora do motor de eventos.
 
     Serve para provar token/número/template antes de ligar o canal — e é o único
     caminho que manda WhatsApp sem passar pelos interruptores, por isso pede
-    confirmação e não roda em lote.
+    confirmação e não roda em lote. Não grava em `entregas`: teste não pode
+    marcar um evento real como já notificado.
+
+    `--modo texto` existe para a **janela de 24h**: se a pessoa escreveu para o
+    número da API nas últimas 24h, texto livre entrega sem template aprovado.
+    Fora da janela, só template — e aí o erro da Meta diz isso na cara.
     """
+    from app.notificador import mensagem, parametros_template
+
     if not wpp_cloud.configurado():
         sys.exit(f"Cloud API não configurada — falta {wpp_cloud.falta()}")
-    exemplo = ["mudança de andamento", "Fundação Exemplo", "Convênio/CR 999999",
-               "Prestação de Contas em Análise → Prestação de Contas em Complementação",
-               "Prazo: 14/08/2026 (em 18d) · bola com o convenente · Próximo passo: enviar a complementação",
-               "27/07/2026"]
-    modo = "DRYRUN (nada sai)" if wpp_cloud.dry_run() else "ENVIO REAL"
-    print(f"template `{wpp_cloud.template_nome()}` -> {wpp_cloud.normalizar_numero(numero)} [{modo}]")
+
+    if evento:
+        ev, ctx = _evento(evento)
+        params, texto = parametros_template(ev, ctx), mensagem(ev, ctx)
+        origem = f"evento #{ev['id']} ({ev['ente']})"
+    else:
+        params, texto = EXEMPLO, "\n".join(EXEMPLO[:5]) + f"\nAbrir: {EXEMPLO[5]}"
+        origem = "exemplo embutido"
+
+    seco = " [DRYRUN — nada sai]" if wpp_cloud.dry_run() else ""
+    destino = wpp_cloud.normalizar_numero(numero)
+    print(f"modo={modo} · origem={origem} · destino={destino}{seco}")
+    print("-" * 60)
+    print(texto if modo == "texto" else "\n".join(f"  {{{{{i}}}}} {p}" for i, p in enumerate(params, 1)))
+    print("-" * 60)
     if not wpp_cloud.dry_run() and input("confirma o envio? [s/N] ").strip().lower() != "s":
         sys.exit("cancelado")
-    ok, detalhe = wpp_cloud.enviar_template(numero, exemplo)
+
+    if modo == "texto":
+        ok, detalhe = wpp_cloud.enviar_texto(destino, texto)
+    else:
+        ok, detalhe = wpp_cloud.enviar_template(destino, params)
     print(("OK " if ok else "FALHOU ") + detalhe)
+    if not ok and modo == "template" and "template" in detalhe.lower():
+        print("  dica: enquanto o template não estiver APPROVED, use --modo texto "
+              "(só entrega se a pessoa escreveu para o número nas últimas 24h)")
     sys.exit(0 if ok else 1)
 
 
@@ -113,7 +161,11 @@ def main():
     ap.add_argument("--listar", action="store_true")
     ap.add_argument("--add", metavar="ENDERECO", help="número E.164 (whatsapp) ou URL (webhook)")
     ap.add_argument("--desativar", metavar="ENDERECO")
-    ap.add_argument("--testar", metavar="NUMERO", help="manda uma mensagem de exemplo agora")
+    ap.add_argument("--testar", metavar="NUMERO", help="manda uma mensagem agora")
+    ap.add_argument("--modo", choices=("template", "texto"), default="template",
+                    help="texto = janela de 24h, sem template aprovado")
+    ap.add_argument("--evento", metavar="ID|ultimo",
+                    help="usa um evento REAL da base em vez do exemplo")
     ap.add_argument("--canal", choices=CANAIS, default="whatsapp")
     ap.add_argument("--cnpj", default="*", help="'*' = toda a carteira (padrão)")
     args = ap.parse_args()
@@ -124,7 +176,7 @@ def main():
     elif args.desativar:
         desativar(args.desativar, args.canal)
     elif args.testar:
-        testar(args.testar)
+        testar(args.testar, args.modo, args.evento)
     else:
         listar()
 

@@ -90,9 +90,9 @@ def test_parametro_longo_e_truncado():
 
 
 # ------------------------------------------------------------- template
-def test_template_tem_sete_parametros_todos_validos():
+def test_template_tem_cinco_parametros_todos_validos():
     params = parametros_template(EVENTO, CONTEXTO)
-    assert len(params) == 7
+    assert len(params) == 5
     for p in params:
         limpo = wpp_cloud.limpar_parametro(p)
         assert limpo and limpo != "—" or p == "—"
@@ -123,7 +123,7 @@ def test_link_do_template_e_do_texto_sao_o_mesmo(monkeypatch):
     try:
         esperado = "https://outro.exemplo.net/cliente.html?doc=60453032000174"
         assert notificador.link_cliente(EVENTO["cnpj"]) == esperado   # sem barra dupla
-        assert esperado in notificador.parametros_template(EVENTO, CONTEXTO)[5]
+        assert esperado in notificador.parametros_template(EVENTO, CONTEXTO)[4]
         assert esperado in notificador.mensagem(EVENTO, CONTEXTO)
     finally:
         monkeypatch.delenv("TUIU_CONSOLE_URL", raising=False)
@@ -156,9 +156,9 @@ def test_exigencia_com_quebra_de_linha_sobrevive_ao_envio():
 def test_todos_os_tipos_de_evento_geram_template_valido(tipo, de, para, trecho):
     ev = {**EVENTO, "tipo": tipo, "de": de, "para": para}
     params = parametros_template(ev, {})
-    assert len(params) == 7 and trecho in params[3]
-    assert params[4] == "—"          # sem contexto, o campo não fica vazio
-    assert params[5].startswith("http")
+    assert len(params) == 5 and trecho in params[2]
+    assert params[3].startswith("dados de")   # sem contexto, sobra a data — nunca vazio
+    assert params[4].startswith("http")
     assert wpp_cloud.enviar_template("61999990000", params)[0]
 
 
@@ -167,9 +167,9 @@ def test_evento_de_inbox_tambem_vira_template():
           "para": "Solicitamos complementação da prestação de contas",
           "detalhe": {"prazos": ["10/08/2026"]}}
     params = parametros_template(ev, {})
-    assert len(params) == 7
-    assert "e-mail" in params[0] and "10/08/2026" in params[4]
-    assert params[5].startswith("http")
+    assert len(params) == 5
+    assert "e-mail" in params[2] and "10/08/2026" in params[3]
+    assert params[4].startswith("http")
 
 
 # ---------------------------------------------------------------- travas

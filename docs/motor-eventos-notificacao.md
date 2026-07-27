@@ -42,36 +42,37 @@ recorte g2/detru  →  eventos.py (diff vs entidades_estado)  →  eventos
 ### Template (obrigatório para alerta proativo)
 
 Aviso de andamento cai **fora da janela de 24h**, e aí a Meta só entrega
-mensagem de template aprovado. Cadastrar no WhatsApp Manager como
-`tuiu_andamento`, categoria **UTILITY**, idioma **pt_BR**, corpo:
+mensagem de template aprovado. O corpo é **fonte única** em
+`ferramentas/template_wpp.py` (constante `CORPO`), que também submete:
 
 ```
-*Tuiú* · {{1}}
-
-*{{2}}*
-{{3}}
-{{4}}
-
-{{5}}
-
-Abrir: {{6}}
-_Transferegov · dados de {{7}} · D-1_
+python ferramentas/template_wpp.py --corpo      # o que vai ser enviado
+python ferramentas/template_wpp.py --submeter
+python ferramentas/template_wpp.py --listar     # acompanha a aprovação
 ```
+
+Nome `aviso_tuiu_andamento`, categoria **UTILITY**, idioma **pt_BR**, na WABA
+`Seriema1` (a mesma do `aviso_veredas`). Cinco variáveis:
 
 | | conteúdo | exemplo |
 |---|---|---|
-| `{{1}}` | tipo do evento | `mudança de andamento` |
-| `{{2}}` | cliente | `FUNDACAO FACULDADE DE MEDICINA` |
-| `{{3}}` | instrumento | `Convênio/CR 850704` |
-| `{{4}}` | transição | `Prestação de Contas em Análise → … em Complementação` |
-| `{{5}}` | o que fazer | `Prazo: 14/08/2026 (em 18d) · bola com o convenente · Próximo passo: …` |
-| `{{6}}` | ficha do cliente | `https://tuiu.araticum.net/cliente.html?doc=60453032000174` |
-| `{{7}}` | data do dado | `25/07/2026` |
+| `{{1}}` | cliente | `FUNDACAO FACULDADE DE MEDICINA` |
+| `{{2}}` | instrumento | `Convênio/CR 850704` |
+| `{{3}}` | tipo + transição | `mudança de andamento: … em Análise → … em Complementação` |
+| `{{4}}` | o que fazer + data | `Prazo: 14/08/2026 (em 18d) · … · dados de 25/07/2026` |
+| `{{5}}` | ficha do cliente | `https://tuiu.araticum.net/cliente.html?doc=60453032000174` |
 
-Se a Meta recusar `{{6}}` por ser URL inteira, mover a base para o texto fixo do
-template (`https://tuiu.araticum.net/cliente.html?doc={{6}}`) e passar só o CNPJ
-— aí `TUIU_CONSOLE_URL` e o template têm que combinar, e trocar o domínio passa
-a exigir nova aprovação.
+⚠️ **Duas armadilhas medidas contra a API real (27/07):**
+
+1. **Variáveis demais para o tamanho do texto.** A versão de 7 variáveis foi
+   recusada com `2388293 — muitas variáveis para sua extensão`. A Meta cobra
+   proporção entre texto fixo e variável; 5 com o corpo atual passou. Nada de
+   informação se perdeu — o tipo do evento foi para o `{{3}}` e a data do dado
+   fecha o `{{4}}`.
+2. **Apagar template queima o nome por até 30 dias.** `aviso_tuiu` (nome curto,
+   na convenção da casa) foi excluído em 27/07 e ficou indisponível; daí o
+   `_andamento`. Por isso `--submeter --forcar` **nunca** apaga sozinho: em
+   recusa de edição ele para e explica. Apagar exige `--apagar` e confirmação.
 
 ⚠️ A Meta recusa parâmetro com quebra de linha, tabulação, 5+ espaços seguidos
 ou vazio (erro 132000). O parecer do órgão vem do CSV **com** `\n` e `\t`, então
@@ -98,8 +99,15 @@ erro só apareceria no celular de quem recebeu.
 ```
 python ferramentas/destinatario.py --listar
 python ferramentas/destinatario.py --add 61999990000 --canal whatsapp   # '*' = carteira toda
-python ferramentas/destinatario.py --testar 5561999990000               # 1 mensagem, fora do motor
+python ferramentas/destinatario.py --testar 5561999990000 --modo texto --evento ultimo
 ```
+
+`--testar` manda UMA mensagem fora do motor (não grava em `entregas`: teste não
+pode marcar evento real como já notificado). `--evento ultimo` usa um evento
+REAL da base — o teste mostra o que o pipe produz, não um exemplo que sempre
+parece bonito. `--modo texto` é o caminho da **janela de 24h**: se a pessoa
+escreveu para o número da API nas últimas 24h, texto livre entrega sem template
+aprovado; fora dela, só template.
 
 Cadastrar **não liga** o canal: continuam valendo as duas travas em série
 (`notificacoes_ativas` + `canal_whatsapp`), que se ligam em `/notificacoes.html`
