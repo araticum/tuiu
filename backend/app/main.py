@@ -28,6 +28,11 @@ app = FastAPI(title="Tuiú", version="0.3.0-console")
 # fechado, então esquecer de proteger uma rota nova não abre buraco.
 PUBLICO = {"/login.html", "/api/login", "/api/sessao"}
 
+# Chrome de UI compartilhado (CSS/JS/fontes) NÃO tem dado sensível — o dado vive
+# atrás de /api. Servem sem sessão para qualquer papel; senão cliente/anônimo
+# tomam 303/403 e o tema/nav não carregam. As PÁGINAS .html seguem fechadas.
+ASSETS_PUBLICOS = {"/nav.js", "/tema.js", "/tuiu-cartorio.css", "/tuiu-fontes.css"}
+
 # Permissões do papel `cliente`: (MÉTODO, prefixo). O método faz parte da
 # permissão — sem ele, "pode ver /api/cliente/" virava "pode escrever em
 # /api/cliente/{doc}/diario", que é o registro INTERNO de atendimento, e em
@@ -80,6 +85,8 @@ def _ip(request: Request) -> str | None:
 async def exigir_sessao(request: Request, call_next):
     caminho = request.url.path
     if caminho in PUBLICO:
+        return await call_next(request)
+    if caminho in ASSETS_PUBLICOS or caminho.startswith("/fonts/"):
         return await call_next(request)
     usuario = auth.sessao_valida(request.cookies.get(auth.COOKIE))
     if usuario is None:
