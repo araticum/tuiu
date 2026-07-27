@@ -89,12 +89,24 @@ def _detectar_ente(con, cnpj: str, ente: str, sub: Path, snap: str) -> list[dict
         antes = visto(dom)
         primeira_vez = not antes  # sem estado => baseline; grava sem emitir "novo" em massa
         for chave, (sit, rot) in atual.items():
+            # 🔴 BRANCO É "NÃO SEI", NÃO É UM ESTADO. O `SIT_CONVENIO` do detru
+            # vem vazio em 114 convênios VIVOS do recorte (conferido no CSV cru:
+            # o 989509 está `INSTRUMENTO_ATIVO=SIM` e com vigência até 2029, e
+            # mesmo assim sem situação). Tratar vazio como valor tem dois danos:
+            # sobrescrever o último valor conhecido apaga a base de comparação, e
+            # emitir "Aprovado → (sem situação)" manda alarme sem conteúdo. Pior,
+            # no dia em que a fonte preencher os 114 de uma vez, seriam 114
+            # alertas falsos no telefone de quem opera.
+            if not sit:
+                continue
             rotulo = f"{ROTULO_DOMINIO.get(dom, dom)} {rot}"
             if chave not in antes:
                 if not primeira_vez:
                     eventos.append(dict(cnpj=cnpj, ente=ente, dominio=dom, chave=chave, rotulo=rotulo,
                                         tipo="novo", de=None, para=sit, snapshot=snap))
-            elif antes[chave] != sit:
+            elif antes[chave] and antes[chave] != sit:
+                # `antes` vazio é estado herdado de quando gravávamos o branco: a
+                # primeira leitura real dele é BASE, não mudança
                 eventos.append(dict(cnpj=cnpj, ente=ente, dominio=dom, chave=chave, rotulo=rotulo,
                                     tipo="mudanca", de=antes[chave], para=sit, snapshot=snap))
             gravar_estado(dom, chave, sit)

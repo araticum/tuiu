@@ -75,51 +75,44 @@ def _avisar_falha(nome: str, rc: int) -> None:
     """Cadeia parada = prazo sem vigilância. Falha silenciosa é o pior defeito
     possível neste produto, então o vermelho sai do host.
 
-    Vai por TODOS os canais ligados, não só pelo grupo interno. Com o alerta de
-    andamento no WhatsApp de quem opera, "não chegou nada hoje" passa a ter dois
-    sentidos — "nada mudou" e "a cadeia morreu" — e só este aviso desempata. Foi
-    exatamente o que faltou em 22/07: o banco caiu, a cadeia parou no primeiro
-    elo e ninguém soube, porque o único canal cadastrado não estava configurado.
+    Vai pelo canal da EQUIPE (`seriema`), nunca pelo canal do CLIENTE. Isto aqui
+    é recado interno — cita elo que quebrou e comando de journalctl —, e cliente
+    não tem o que fazer com ele nem por que saber. O canal `seriema` ganhou
+    transporte de nuvem justamente para este aviso ter por onde sair.
+
+    Importa porque, com o alerta de andamento no WhatsApp de quem opera, "não
+    chegou nada hoje" passa a ter dois sentidos — "nada mudou" e "a cadeia
+    morreu" — e só este aviso desempata. Foi o que faltou em 22/07: o banco
+    caiu, a cadeia parou no primeiro elo e ninguém soube.
     """
     sys.path.insert(0, str(RAIZ / "backend"))
     texto = (f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc}).\n"
              f"Os prazos NÃO foram recalculados hoje.\n"
              f"journalctl --user -u tuiu-diario -n 50")
     hoje = date.today().isoformat()
-    avisou = False
+    avisou, detalhe = False, "canal desligado ou não configurado"
     try:
-        from app import seriema, wpp_cloud
+        from app import seriema
         from app.config import envio_externo_liberado
-        from app.db import conectar
         from app.notificador import CONSOLE_URL
 
-        # respeita o interruptor: canal pausado não pode ser furado por aqui,
-        # senão a pausa vale para o cliente e não para nós
+        # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
         campos = ["Tuiú (aviso interno, não é de cliente)",
                   f"cadeia diária — elo {nome} (rc={rc})",
                   "FALHA: os prazos NÃO foram recalculados hoje",
                   f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
                   CONSOLE_URL]
 
+        # respeita o interruptor: canal pausado não pode ser furado por aqui,
+        # senão a pausa vale para o cliente e não para nós
         if envio_externo_liberado("seriema") and seriema.configurado():
-            avisou, _ = seriema.enviar_grupo(texto, chave_entrega=f"cadeia-falhou-{hoje}-{nome}",
-                                             parametros=campos)
-
-        if envio_externo_liberado("whatsapp") and wpp_cloud.configurado():
-            with conectar() as con:
-                numeros = [e for (e,) in con.execute(
-                    "SELECT DISTINCT endereco FROM destinatarios WHERE ativo AND canal='whatsapp'")]
-            for numero in numeros:
-                # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
-                ok, det = wpp_cloud.enviar_template(numero, campos)
-                avisou = avisou or ok
-                if not ok:
-                    print(f"[aviso] whatsapp {numero}: {det}", file=sys.stderr)
+            avisou, detalhe = seriema.enviar_grupo(
+                texto, chave_entrega=f"cadeia-falhou-{hoje}-{nome}", parametros=campos)
     except Exception as e:  # avisar nunca pode mascarar a falha original
-        print(f"[aviso] falha ao notificar: {e}", file=sys.stderr)
+        detalhe = f"{type(e).__name__}: {e}"
     if not avisou:
-        print("[aviso] NENHUM canal de alerta ativo — a falha fica só no log e no "
-              "`systemctl --user is-failed tuiu-diario`", file=sys.stderr)
+        print(f"[aviso] a equipe NÃO foi avisada ({detalhe}) — a falha fica só no log "
+              f"e no `systemctl --user is-failed tuiu-diario`", file=sys.stderr)
 
 
 def _br_hoje() -> str:
