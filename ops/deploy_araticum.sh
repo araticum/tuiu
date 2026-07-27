@@ -160,6 +160,9 @@ Description=Tuiu - sonda o data-atualizacao a cada 10 min na janela da carga
 # o dia inteiro so gastaria requisicao para reconfirmar o que ja nao muda.
 OnCalendar=*-*-* 04..11:00/10:00
 Persistent=false
+
+[Install]
+WantedBy=timers.target
 UNIT
 
 systemctl --user daemon-reload
