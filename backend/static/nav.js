@@ -81,7 +81,12 @@
     + "html[data-tema=cartorio] #tuiunav .drop a,html[data-tema=cartorio] #tuiunav .drop button.op{color:" + PAL_CART.tx + "}"
     + "html[data-tema=cartorio] #tuiunav .drop a:hover,html[data-tema=cartorio] #tuiunav .drop button.op:hover{background:rgba(34,28,18,.05)}"
     + "html[data-tema=cartorio] #tuiunav .drop .rotulo{color:" + PAL_CART.dim + "}"
-    + "html[data-tema=cartorio] #tuiunav .drop button.op .marca-tema{color:" + PAL_CART.selo + "}";
+    + "html[data-tema=cartorio] #tuiunav .drop button.op .marca-tema{color:" + PAL_CART.selo + "}"
+    /* ===== Leitor: esconde os controles de escrita (o backend também barra) ===== */
+    + "html.leitor .acts,html.leitor .dch,html.leitor .acoes,html.leitor .acao,html.leitor .sw,html.leitor .edita{display:none!important}"
+    + "#tuiunav .lemode{font:600 10px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:"
+      + PAL.dim + ";border:1px solid " + PAL.linha + ";border-radius:6px;padding:3px 8px;margin-left:4px;white-space:nowrap}"
+    + "html[data-tema=cartorio] #tuiunav .lemode{color:" + PAL_CART.selo + ";border-color:" + PAL_CART.linha2 + ";border-radius:0}";
 
   var TABS = [["Cockpit", "/"], ["Mesa", "/mesa.html"], ["Fila", "/fila.html"], ["Carteira", "/carteira.html"],
               ["Inteligência", "/inteligencia.html"], ["Guia interativo", "/guia.html"]];
@@ -99,6 +104,9 @@
     // operador E leitor têm o nav interno (a carteira toda); o leitor só não
     // ganha os controles de edição/admin (config já é admin-only, user.admin).
     var op = !!(user && (user.papel === "operador" || user.papel === "leitor"));
+    var leitor = !!(user && user.papel === "leitor");
+    if (leitor) document.documentElement.classList.add("leitor");   // CSS esconde os controles de escrita
+    var lemode = leitor ? '<span class="lemode" title="você consulta a carteira; edições ficam ocultas">modo leitura</span>' : "";
     var tabs = "", busca = "", mais = "";
     if (op) {
       tabs = TABS.map(function (x) { return '<a class="tab ' + (ativo(x[1]) ? "on" : "") + '" href="' + x[1] + '">' + x[0] + "</a>"; }).join("");
@@ -118,7 +126,7 @@
     var seletor = '<div class="rotulo">Tema</div>'
       + '<button class="op" data-tema="claro">Escuro (clássico)<span class="marca-tema">' + (temaAtual !== "cartorio" ? "✓" : "") + '</span></button>'
       + '<button class="op" data-tema="cartorio">Cartório (papel)<span class="marca-tema">' + (temaAtual === "cartorio" ? "✓" : "") + '</span></button>';
-    nav.innerHTML = '<a class="marca" href="/">Tui<span>ú</span></a>' + tabs + mais
+    nav.innerHTML = '<a class="marca" href="/">Tui<span>ú</span></a>' + tabs + mais + lemode
       + '<span class="sp"></span>' + busca
       + '<div class="menu" id="tuser"><button>' + quem + ' &#9662;</button>'
       + '<div class="drop"><a href="/conta.html">Conta</a>' + seletor + '<a href="#" id="tsair">Sair</a></div></div>';

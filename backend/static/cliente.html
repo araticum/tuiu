@@ -76,13 +76,15 @@
 
     <div class="sec">Diário de atendimento</div>
     <div class="box">
-      <select id="tipoNota">
-        <option value="contato">contato</option><option value="nota">nota</option>
-        <option value="protocolo">protocolo</option><option value="documento">documento</option>
-        <option value="decisao">decisão</option>
-      </select>
-      <textarea id="texto" rows="2" placeholder="o que aconteceu / o que combinamos" style="margin-top:6px"></textarea>
-      <button onclick="anotar()">registrar</button>
+      <div class="edita">
+        <select id="tipoNota">
+          <option value="contato">contato</option><option value="nota">nota</option>
+          <option value="protocolo">protocolo</option><option value="documento">documento</option>
+          <option value="decisao">decisão</option>
+        </select>
+        <textarea id="texto" rows="2" placeholder="o que aconteceu / o que combinamos" style="margin-top:6px"></textarea>
+        <button onclick="anotar()">registrar</button>
+      </div>
       <div id="diario" style="margin-top:10px"></div>
     </div>
   </div>
@@ -172,10 +174,10 @@ function carregar(){
 
     document.getElementById("pessoas").innerHTML =
       (c.pessoas||[]).map(p=>`<div class="li">${p.nome}<div class="meta">${p.papel||"—"} · CPF ${p.cpf.slice(0,3)}.***.***-${p.cpf.slice(-2)}</div></div>`).join("")
-      + `<div class="linha2" style="margin-top:8px">
+      + `<div class="edita"><div class="linha2" style="margin-top:8px">
            <input id="pNome" placeholder="nome do dirigente"><input id="pCpf" placeholder="CPF">
            <input id="pPapel" placeholder="papel" style="max-width:110px"></div>
-         <button onclick="addPessoa()">cadastrar dirigente</button>`;
+         <button onclick="addPessoa()">cadastrar dirigente</button></div>`;
 
     document.getElementById("diario").innerHTML = (f.diario||[]).map(d=>`
       <div class="li"><b>${d.tipo}</b> — ${d.texto}
