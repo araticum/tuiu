@@ -14,7 +14,8 @@ testes travam.
    extrator para guardar o texto, este teste cai.
 4. **Handshake não vaza o token.** Token errado é 403 sem dica.
 
-Não toca rede nem banco: testa verificação e extração, que é onde mora o risco.
+Não toca a rede. Só o último caso (janela de 24h) usa banco — validado por
+mutação: repondo o `interval '%s hours'` original, ele reprova.
 
     py -3 -m pytest testes/teste_wpp_webhook.py -q
 """
@@ -169,3 +170,32 @@ def test_token_de_verificacao_vem_do_ambiente(com_segredo):
 def test_sem_token_configurado_nao_ha_handshake(monkeypatch):
     monkeypatch.delenv("TUIU_WPP_VERIFY_TOKEN", raising=False)
     assert wpp_webhook.token_verificacao() == ""
+
+
+# ------------------------------------------------------- janela (com banco)
+def test_janela_de_24h_respeita_a_borda():
+    """Regressão de um bug SILENCIOSO: `interval '%s hours'` não parametriza —
+    o placeholder fica dentro do literal, o Postgres lê o lixo como 1 hora e a
+    janela encolhe de 24h para 1h. Medido no host: o corte não mudava com 1, 24
+    ou 168. Nada quebra, só passa a dizer "fechada" para quem escreveu há duas
+    horas — e o alerta some sem ninguém entender por quê.
+    """
+    from app.db import conectar, migrar
+
+    migrar()
+    numero, casos = "5599999999999", [(2, True), (23, True), (25, False)]
+    try:
+        for horas, esperado in casos:
+            with conectar() as con:
+                con.execute("DELETE FROM wpp_entrada WHERE numero=%s", (numero,))
+                con.execute(
+                    "INSERT INTO wpp_entrada (tipo, numero, wamid, recebido_em)"
+                    " VALUES ('mensagem', %s, %s, now() - make_interval(hours => %s))",
+                    (numero, f"wamid.teste{horas}", horas))
+                con.commit()
+            assert wpp_webhook.janela_aberta(numero) is esperado, \
+                f"mensagem de {horas}h atrás: esperava janela_aberta={esperado}"
+    finally:
+        with conectar() as con:
+            con.execute("DELETE FROM wpp_entrada WHERE numero=%s", (numero,))
+            con.commit()

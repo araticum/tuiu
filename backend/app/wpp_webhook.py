@@ -132,9 +132,12 @@ def janela_aberta(numero: str) -> bool:
         return False
     try:
         with conectar() as con:
+            # make_interval, NÃO `interval '%s hours'`: dentro de literal o
+            # placeholder não é substituído, o Postgres lê o lixo como 1 hora e a
+            # janela encolhe de 24h para 1h — errando calado, que é o pior modo.
             r = con.execute(
                 "SELECT 1 FROM wpp_entrada WHERE tipo='mensagem' AND numero=%s"
-                " AND recebido_em > now() - interval '%s hours' LIMIT 1",
+                " AND recebido_em > now() - make_interval(hours => %s) LIMIT 1",
                 (alvo, JANELA_HORAS)).fetchone()
         return r is not None
     except Exception:  # noqa: BLE001 — tabela ainda não migrada: não afirma nada
