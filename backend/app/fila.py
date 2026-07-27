@@ -41,6 +41,11 @@ PROXIMO_PASSO = {
     # o prazo estourado aqui e do ORGAO — a acao e cobrar, nao produzir
     "analise_parada_concedente": "Cobrar decisão do concedente (art. 97) sobre as prestações paradas",
     "proposta_rejeitada": "Ler o parecer do órgão e decidir: corrigir e reapresentar, ou encerrar",
+    # marco `ok` — a prestação está entregue e a bola é do órgão. Não aparecia na
+    # fila (que só lê farol<>'ok'), mas ENTRA na mensagem de andamento, e sem
+    # esta linha o alerta dizia "Próximo passo: Analisar" para quem não tem nada
+    # a fazer. Nada a produzir aqui: o passo é vigiar o relógio do art. 97.
+    "prestacao_em_analise": "Nada a enviar — acompanhar a análise e cobrar o órgão se passar de 60 dias (art. 97)",
 }
 
 
