@@ -37,6 +37,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import seriema, wpp_cloud  # noqa: E402
+from app.carteira import nome_exibicao, nomes_carteira  # noqa: E402
 from app.config import envio_externo_liberado  # noqa: E402
 from app.db import conectar  # noqa: E402
 
@@ -67,8 +68,17 @@ def link_cliente(cnpj: str) -> str:
 
 def contexto(con, cnpj: str, instrumento: str) -> dict:
     """O que o operador precisa saber junto com a mudança: prazo, de quem é a
-    bola, próximo passo e a exigência do órgão. Sai do marco ABERTO mais urgente
-    daquele instrumento.
+    bola, próximo passo e a exigência do órgão.
+
+    Prefere o marco ABERTO mais urgente, mas cai no marco `ok` quando não há
+    nenhum aberto — senão a mensagem mais comum da carteira ("prestação enviada
+    para análise") chegaria sem uma linha sequer de contexto, que foi o que o
+    primeiro teste com dado real mostrou.
+
+    🔴 **Marco `ok` nunca vira prazo.** Ele tem `data_limite` no passado (a data
+    em que a prestação foi entregue), e anunciá-la como vencimento reencena o
+    alarme falso de 19/07, quando o motor acusava atraso de quem cumpriu. Com
+    `ok` sai só de quem é a bola e o próximo passo.
 
     Degrada para {} se `marcos`/`regras_acao` ainda não existirem — contexto é
     enriquecimento, nunca pode impedir o aviso de sair.
@@ -78,12 +88,13 @@ def contexto(con, cnpj: str, instrumento: str) -> dict:
     try:
         from app.fila import _acoes
         linha = con.execute(
-            "SELECT tipo, data_limite, detalhes FROM marcos"
-            " WHERE cnpj=%s AND instrumento=%s AND farol <> 'ok'"
-            " ORDER BY data_limite NULLS FIRST LIMIT 1", (cnpj, instrumento)).fetchone()
+            "SELECT tipo, data_limite, detalhes, farol FROM marcos"
+            " WHERE cnpj=%s AND instrumento=%s"
+            " ORDER BY (farol = 'ok'), data_limite NULLS FIRST LIMIT 1",
+            (cnpj, instrumento)).fetchone()
         if not linha:
             return {}
-        tipo, limite, det = linha
+        tipo, limite, det, farol = linha
         det = det or {}
         ultimo = det.get("ultimo_parecer")
         acoes = _acoes(con)
@@ -93,7 +104,7 @@ def contexto(con, cnpj: str, instrumento: str) -> dict:
 
     ctx = {"bola": det.get("bola_com") or "convenente",
            "proximo_passo": acoes.get(tipo, "Analisar")}
-    if limite:
+    if limite and farol != "ok":
         dias = (limite - date.today()).days
         ctx["prazo"] = _br(limite)
         ctx["prazo_dias"] = f"vencido há {-dias}d" if dias < 0 else (
@@ -257,8 +268,13 @@ def despachar() -> dict:
             " ORDER BY id").fetchall()
         cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo", "de", "para",
                 "snapshot", "origem", "detalhe"]
+        # o `ente` gravado no evento pode ser o CNPJ cru (eventos criados antes do
+        # fix de 27/07) — resolver AQUI conserta o que já está na base, sem
+        # reescrever histórico
+        nomes = nomes_carteira()
         for row in eventos:
             ev = dict(zip(cols, row))
+            ev["ente"] = nome_exibicao(ev["cnpj"], ev["ente"], nomes)
             # a chave do evento de situação É o nº do instrumento; contador não tem
             ctx = contexto(con, ev["cnpj"], ev["chave"]) if ev["chave"] != "#count" else {}
             msg = mensagem(ev, ctx)

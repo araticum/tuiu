@@ -76,6 +76,18 @@ def nomes_carteira() -> dict[str, str]:
         return {}
 
 
+def nome_exibicao(cnpj: str, fallback: str | None = None, nomes: dict | None = None) -> str:
+    """Como o cliente é chamado na tela e na mensagem. Ordem: rótulo escrito à
+    mão -> `clientes` -> o que o chamador tinha -> o CNPJ.
+
+    Existe em um lugar só porque o evento GRAVA o nome no momento do diff: quem
+    resolver diferente na hora de exibir manda CNPJ cru para o WhatsApp de
+    alguém — foi o que aconteceu com os 23 eventos de julho/2026.
+    """
+    nomes = nomes_carteira() if nomes is None else nomes
+    return ROTULOS.get(cnpj) or nomes.get(cnpj) or fallback or cnpj
+
+
 def _data_br(s: str | None) -> date | None:
     try:
         return datetime.strptime((s or "").strip(), "%d/%m/%Y").date()

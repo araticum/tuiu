@@ -172,6 +172,22 @@ def test_evento_de_inbox_tambem_vira_template():
     assert params[4].startswith("http")
 
 
+def test_marco_cumprido_nunca_vira_prazo_na_mensagem():
+    """Marco `ok` (prestação JÁ entregue) tem data_limite no passado — a data da
+    entrega. Anunciá-la como vencimento reencena o alarme falso de 19/07, quando
+    o motor acusava atraso de 77% de quem tinha cumprido.
+
+    O `contexto()` já filtra por farol; aqui se trava o efeito: um contexto de
+    marco cumprido diz de quem é a bola, nunca 'vencido há N dias'.
+    """
+    cumprido = {"bola": "concedente", "proximo_passo": "Acompanhar a análise do órgão"}
+    params = parametros_template(EVENTO, cumprido)
+    assert "Bola com o concedente" in params[3]
+    for proibido in ("vencido", "Prazo:", "vence hoje"):
+        assert proibido not in params[3], f"marco cumprido não pode falar de {proibido}"
+    assert "vencido" not in mensagem(EVENTO, cumprido)
+
+
 # ---------------------------------------------------------------- travas
 def test_sem_configuracao_devolve_erro_e_nao_levanta(monkeypatch):
     monkeypatch.delenv("TUIU_WPP_TOKEN", raising=False)

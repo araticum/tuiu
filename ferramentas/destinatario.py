@@ -95,6 +95,7 @@ EXEMPLO = ["mudança de andamento", "Fundação Exemplo", "Convênio/CR 999999",
 def _evento(qual: str) -> tuple[dict, dict]:
     """Um evento REAL da base + seu contexto — o teste mostra o que o pipe produz
     de verdade, não um exemplo que sempre parece bonito."""
+    from app.carteira import nome_exibicao
     from app.notificador import contexto
     cols = ["id", "cnpj", "ente", "dominio", "chave", "rotulo", "tipo", "de", "para",
             "snapshot", "origem", "detalhe"]
@@ -107,6 +108,7 @@ def _evento(qual: str) -> tuple[dict, dict]:
         if not linha:
             sys.exit(f"evento não encontrado: {qual}")
         ev = dict(zip(cols, linha))
+        ev["ente"] = nome_exibicao(ev["cnpj"], ev["ente"])   # mesmo tratamento do despacho
         ctx = contexto(con, ev["cnpj"], ev["chave"]) if ev["chave"] != "#count" else {}
     return ev, ctx
 
