@@ -4,16 +4,20 @@
 # Sobe/atualiza:
 #   ~/tuiu/                       código (backend, ingest, ferramentas, ops, db)
 #   banco `tuiu` no Postgres do host (migrations aplicadas na hora)
-#   timer systemd --user           cadeia diária às 09h30 (pós-carga da API)
+#   timer systemd --user           cadeia diária às 09h30 + sonda do horário de carga
 #
 # NÃO encosta na stack veredas nem em nada de produção do oasis.v2.
 #
 # SEGREDOS: não vão no tar. O host lê de ~/tuiu/.env (chmod 600, fora do git).
 #   PORTAL_TRANSPARENCIA_API_KEY   já gravado (do cofre DPAPI, via pipe)
-#   TUIU_SERIEMA_*                 AUSENTE -> o aviso de cadeia quebrada não
-#                                  sai do host; só fica no journal e no
-#                                  `systemctl --user is-failed`. Enquanto isso,
-#                                  uma quebra às 09h30 passa despercebida.
+#   TUIU_WPP_*                     token/phone/WABA/app-secret da Cloud API
+#                                  (do cofre DPAPI, via pipe). Sustentam tanto o
+#                                  aviso da equipe quanto o webhook de entrada.
+#   TUIU_SERIEMA_PROVIDER=cloud_api + TUIU_SERIEMA_CLOUD_DESTINOS
+#                                  quem da equipe recebe o vermelho. Com isto o
+#                                  aviso de cadeia quebrada SAI do host — antes
+#                                  ficava só no journal e a quebra de 22/07
+#                                  passou despercebida.
 #   TUIU_IMAP_*                    ausente de propósito: o elo de inbox só liga
 #                                  quando houver cadastro de operador real.
 #
@@ -136,7 +140,7 @@ echo "  timer instalado:"
 systemctl --user list-timers tuiu-diario.timer --no-pager | head -3
 REMOTO
 
-echo "==> instalando a sonda de horário de carga (systemd --user, 04h-11h)"
+echo "==> instalando a sonda de horário de carga (systemd --user; host dorme 02h30-05h30)"
 ssh "$HOST" "bash -s" <<'REMOTO'
 set -euo pipefail
 mkdir -p ~/.config/systemd/user
