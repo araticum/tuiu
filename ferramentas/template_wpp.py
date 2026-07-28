@@ -72,6 +72,56 @@ EXEMPLO = [
     "https://tuiu.araticum.net/cliente.html?doc=60453032000174",
 ]
 
+# ---------------------------------------------------------------------------
+# Segundo template: o RESUMO do dia (a triagem que o Danilo pediu em 27/07).
+# Nao substitui o de cima — sao mensagens de natureza diferente, e a Meta cobra
+# um template por formato. Este e o que vai por padrao; o de evento fica para um
+# recorte critico futuro (ver db/0028).
+#
+# Tres posicoes FIXAS de item porque a contagem de parametros do template e fixa
+# na Meta. Sobra vira travessao: feio, mas parametro vazio e recusado no envio e
+# inventar item para preencher seria pior.
+CORPO_RESUMO = "\n".join([
+    "*Tuiú* · resumo do dia",
+    "",
+    "{{1}}",
+    "",
+    "Precisa de você agora:",
+    "• {{2}}",
+    "• {{3}}",
+    "• {{4}}",
+    "",
+    "{{5}}",
+    "",
+    "A mesa completa, já priorizada, está no console: "
+    "https://tuiu.araticum.net/mesa.html",
+    "_Andamento do Transferegov, com um dia de defasagem (D-1)._",
+])
+EXEMPLO_RESUMO = [
+    "8 mudança(s) na carteira hoje. 2 pede(m) sua ação.",
+    "CONFEDERACAO BRASILEIRA DO DESPORTO ESCOLAR · Convênio/CR 935588 (em 11d) — "
+    "Montar e enviar a prestação de contas no Transferegov",
+    "FUNDACAO FACULDADE DE MEDICINA · Convênio/CR 850704 (em 26d) — "
+    "Montar e enviar a prestação de contas no Transferegov",
+    "—",
+    "2 mudança(s) estão com o órgão — nada a fazer.",
+]
+
+MODELOS = {
+    "andamento": (CORPO, EXEMPLO),
+    "resumo": (CORPO_RESUMO, EXEMPLO_RESUMO),
+}
+
+
+def _modelo(qual: str) -> tuple[str, list[str]]:
+    if qual not in MODELOS:
+        sys.exit(f"modelo desconhecido: {qual} (use {', '.join(MODELOS)})")
+    return MODELOS[qual]
+
+
+def nome_do_modelo(qual: str) -> str:
+    return wpp_cloud.template_nome() if qual == "andamento" else "aviso_tuiu_resumo"
+
 
 def _token() -> str:
     return wpp_cloud._cfg("TUIU_WPP_TOKEN")
@@ -128,16 +178,17 @@ def listar() -> None:
     print("\nAPPROVED = já entrega fora da janela de 24h · PENDING = em análise (costuma levar minutos a horas)")
 
 
-def submeter(forcar: bool) -> None:
-    nome = wpp_cloud.template_nome()
+def submeter(forcar: bool, qual: str = "andamento") -> None:
+    corpo, exemplo = _modelo(qual)
+    nome = nome_do_modelo(qual)
     idioma = wpp_cloud._cfg("TUIU_WPP_IDIOMA", "pt_BR")
-    if len(EXEMPLO) != CORPO.count("{{"):
-        sys.exit(f"exemplo com {len(EXEMPLO)} valores para {CORPO.count('{{')} variáveis — a Meta recusa")
+    if len(exemplo) != corpo.count("{{"):
+        sys.exit(f"exemplo com {len(exemplo)} valores para {corpo.count('{{')} variáveis — a Meta recusa")
 
     componentes = [{
-        "type": "BODY", "text": CORPO,
+        "type": "BODY", "text": corpo,
         # a Meta EXIGE amostra para cada variável; sem isso a submissão é recusada
-        "example": {"body_text": [EXEMPLO]},
+        "example": {"body_text": [exemplo]},
     }]
 
     ja = _existentes(nome)
@@ -178,6 +229,7 @@ def main():
     ap.add_argument("--apagar", metavar="NOME",
                     help="apaga um template. A Meta segura o nome por ATE 30 DIAS — sem volta")
     ap.add_argument("--corpo", action="store_true", help="só mostra o corpo que será enviado")
+    ap.add_argument("--modelo", choices=sorted(MODELOS), default="andamento")
     args = ap.parse_args()
 
     if args.apagar:
@@ -186,13 +238,15 @@ def main():
         r = _chamar("DELETE", f"{_waba()}/message_templates?name={args.apagar}")
         sys.exit(r["_erro"] if r.get("_erro") else f"apagado: {args.apagar}")
     if args.corpo:
-        print(CORPO)
-        print("\nexemplo:", json.dumps(EXEMPLO, ensure_ascii=False, indent=2))
+        corpo, exemplo = _modelo(args.modelo)
+        print(f"# {nome_do_modelo(args.modelo)}\n")
+        print(corpo)
+        print("\nexemplo:", json.dumps(exemplo, ensure_ascii=False, indent=2))
         return
     if not wpp_cloud.configurado() and not args.listar:
         sys.exit(f"Cloud API não configurada — falta {wpp_cloud.falta()}")
     if args.submeter:
-        submeter(args.forcar)
+        submeter(args.forcar, args.modelo)
     else:
         listar()
 

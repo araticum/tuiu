@@ -118,7 +118,8 @@ def _cabecalhos_assinados(secret: str, metodo: str, caminho: str, corpo: bytes,
     }
 
 
-def _enviar_nuvem(parametros: list[str], timeout: float) -> tuple[bool, str]:
+def _enviar_nuvem(parametros: list[str], timeout: float,
+                  template: str | None = None) -> tuple[bool, str]:
     """Um template por número de quem opera.
 
     Falha se QUALQUER destino falhar: aviso que chega pela metade é aviso
@@ -127,7 +128,8 @@ def _enviar_nuvem(parametros: list[str], timeout: float) -> tuple[bool, str]:
     destinos = destinos_nuvem()
     entregues, erros = [], []
     for destino in destinos:
-        ok, detalhe = wpp_cloud.enviar_template(destino, parametros, timeout=timeout)
+        ok, detalhe = wpp_cloud.enviar_template(destino, parametros, timeout=timeout,
+                                                template=template)
         (entregues if ok else erros).append(f"{destino}: {detalhe}")
     if erros:
         return False, f"{len(erros)}/{len(destinos)} falharam — " + " | ".join(erros)
@@ -135,7 +137,7 @@ def _enviar_nuvem(parametros: list[str], timeout: float) -> tuple[bool, str]:
 
 
 def enviar_grupo(texto: str, chave_entrega: str, parametros: list[str] | None = None,
-                 timeout: float = 15.0) -> tuple[bool, str]:
+                 timeout: float = 15.0, template: str | None = None) -> tuple[bool, str]:
     """Envia a quem opera. Retorna (ok, detalhe). Nunca levanta.
 
     `parametros` são os campos do template e só valem no transporte de nuvem —
@@ -155,7 +157,7 @@ def enviar_grupo(texto: str, chave_entrega: str, parametros: list[str] | None = 
     if provedor() == PROVEDOR_NUVEM:
         if not parametros:
             return False, "transporte cloud_api exige `parametros` do template"
-        return _enviar_nuvem(parametros, timeout)
+        return _enviar_nuvem(parametros, timeout, template)
 
     payload = {
         "group_id": _cfg("TUIU_SERIEMA_GROUP_ID"),

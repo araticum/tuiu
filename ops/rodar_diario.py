@@ -195,7 +195,12 @@ def main():
         # A falha aparece no log e a norma fica pendente no console.
         _passo(fh, "vigilia normativa (DOU)", [py, "ingest/normas/vigia_dou.py"],
                essencial=False)
-        _passo(fh, "notificador (outbox/webhook/whatsapp)", [py, "backend/app/notificador.py"])
+        _passo(fh, "notificador (outbox; canais só se alerta_por_evento)",
+               [py, "backend/app/notificador.py"])
+        # a TRIAGEM — uma mensagem por dia com o que exige ação, em vez de uma
+        # por evento (correção do Danilo, 27/07: o Transferegov já manda e-mail
+        # de cada mudança). Dia sem ação não envia nada.
+        _passo(fh, "resumo do dia (triagem para a equipe)", [py, "backend/app/resumo_diario.py"])
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:

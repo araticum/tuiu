@@ -15,7 +15,11 @@ from __future__ import annotations
 
 from app.db import conectar
 
-CHAVES_NOTIFICACAO = ("notificacoes_ativas", "canal_seriema", "canal_whatsapp", "canal_webhook")
+CHAVES_NOTIFICACAO = ("notificacoes_ativas", "canal_seriema", "canal_whatsapp", "canal_webhook",
+                      # modo: false (padrão) = um resumo por dia; true = uma
+                      # mensagem por evento. Os dois juntos são a enxurrada que
+                      # o resumo veio evitar — ver db/0028.
+                      "alerta_por_evento")
 _VERDADEIROS = ("true", "1", "sim", "on", "yes")
 
 

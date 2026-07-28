@@ -93,6 +93,20 @@ async function carregar() {
         ${geral ? "Desligar" : "Ligar"}</button>
     </div></div>`;
 
+  const porEvento = (d.chaves.alerta_por_evento || {}).ligado;
+  html += `<div class="sec">Modo</div>
+    <div class="card mestre"><div class="linha">
+      <div class="txt">
+        <div class="nome">${porEvento ? "Uma mensagem por evento" : "Um resumo por dia (recomendado)"}</div>
+        <div class="desc">O Transferegov já manda e-mail de cada mudança. O resumo diz o que
+          exige AÇÃO — "de N mudanças, K pedem você" — e cala nos dias em que nada pede.
+          Ligar o por-evento devolve a enxurrada, e os dois juntos mandam em dobro.</div>
+      </div>
+      <div class="estado ${porEvento ? "on" : "off"}">${porEvento ? "por evento" : "resumo"}</div>
+      <button class="sw ${porEvento ? "on" : ""}" onclick="alternar('alerta_por_evento', ${!porEvento})">
+        ${porEvento ? "Voltar ao resumo" : "Mudar para por-evento"}</button>
+    </div></div>`;
+
   html += `<div class="sec">Canais</div>`;
   for (const [id, c] of Object.entries(d.canais)) {
     const meta = ROTULOS[id] || { nome: id, classe: "externo", desc: "" };

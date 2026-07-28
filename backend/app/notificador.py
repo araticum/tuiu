@@ -38,7 +38,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import seriema, wpp_cloud  # noqa: E402
 from app.carteira import nome_exibicao, nomes_carteira  # noqa: E402
-from app.config import envio_externo_liberado  # noqa: E402
+from app.config import envio_externo_liberado, ligado  # noqa: E402
 from app.db import conectar  # noqa: E402
 
 WEBHOOK_URL = os.environ.get("TUIU_WEBHOOK_URL", "").strip()
@@ -240,6 +240,14 @@ def _canais_liberados(con, cnpj: str) -> list[tuple[str, str]]:
     `configuracoes_log`.
     """
     destinos: list[tuple[str, str]] = []
+
+    # 🔕 O PADRÃO É NÃO MANDAR POR EVENTO. Correção do Danilo (27/07): o
+    # Transferegov já manda e-mail de cada mudança, então repetir aqui é a mesma
+    # inundação em outro canal. O que sai é o `resumo_diario` — a triagem. Este
+    # caminho continua no código para um recorte crítico futuro, mas ligar é ato
+    # deliberado (`alerta_por_evento` em /notificacoes.html).
+    if not ligado("alerta_por_evento"):
+        return destinos
 
     if envio_externo_liberado("whatsapp"):   # alcança o CLIENTE
         destinos += con.execute(

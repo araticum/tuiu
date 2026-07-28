@@ -141,11 +141,16 @@ def _post(payload: dict, timeout: float) -> tuple[bool, str]:
     return True, str(ids[0].get("id") or "enviado")
 
 
-def enviar_template(destino: str, parametros: list[str], timeout: float = 20.0) -> tuple[bool, str]:
+def enviar_template(destino: str, parametros: list[str], timeout: float = 20.0,
+                    template: str | None = None) -> tuple[bool, str]:
     """Mensagem de template — o caminho do alerta proativo. Nunca levanta.
 
     `parametros` entram em ordem nos {{1}}..{{n}} do corpo aprovado; a contagem
     tem que bater exatamente com a do template, senão a Meta recusa.
+
+    `template` escolhe o modelo: são dois com formatos diferentes (`aviso_tuiu_*`
+    de andamento e de resumo) e mandar os parâmetros de um no corpo do outro
+    produz mensagem trocada, não erro.
     """
     numero = normalizar_numero(destino)
     if not numero:
@@ -157,7 +162,7 @@ def enviar_template(destino: str, parametros: list[str], timeout: float = 20.0) 
         "to": numero,
         "type": "template",
         "template": {
-            "name": template_nome(),
+            "name": template or template_nome(),
             "language": {"code": _cfg("TUIU_WPP_IDIOMA", "pt_BR")},
             "components": [{
                 "type": "body",
