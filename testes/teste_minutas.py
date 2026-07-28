@@ -111,4 +111,7 @@ def test_peca_de_cobre_os_marcos_que_tem_rascunho():
     assert peca_de("proposta_parada", "123", "555", C)["tipo"] == "cobranca-art97"
     assert peca_de("complementacao_pendente", "123", "555", C)["tipo"] == "resposta-diligencia"
     assert peca_de("prestacao_contas", "123", "9", C)["url"].endswith("cliente.html?doc=123")
-    assert peca_de("parcela_prevista", "123", "9", C) is None, "conferência não é documento"
+    # a parcela não pede ofício, pede CONFERIR se o dinheiro entrou — e o
+    # documento é o extrato da conta (os outros elos da cadeia estão vazios)
+    assert peca_de("parcela_prevista", "123", "9", C)["tipo"] == "conferencia-parcela"
+    assert peca_de("tipo_que_nao_existe", "123", "9", C) is None

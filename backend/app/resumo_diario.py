@@ -15,13 +15,23 @@ cima e não sobrar tempo, já fez o que importava.
 Um item precisa das TRÊS coisas ao mesmo tempo:
 
 1. **movimento** — mudou no snapshot de hoje (senão é backlog, não notícia);
-2. **bola nossa** — `bola_com = convenente`; o que está com o órgão não é ação
-   do operador (é a distinção que matou o alarme falso de 77% em 19/07);
-3. **faixa que pede ação** — a mesa já ordena por urgência; inadimplência de
+2. **faixa que pede ação** — a mesa já ordena por urgência; inadimplência de
    2019 é passivo antigo, não a fila do dia.
 
-Filtrar só por bola não serve: dos 396 marcos abertos hoje, 355 são "nossos".
+⚠️ **A faixa manda, não a bola.** A primeira versão exigia `bola_com =
+convenente` e com isso descartava os **41 itens de "Cobrar o órgão (art. 97)"** —
+justamente onde o cliente tem alavanca e onde a peça já está pronta. O órgão não
+se cobra sozinho: bola com o concedente e tarefa nossa convivem, e é a faixa que
+sabe disso. A bola sobrou só para classificar o que NÃO é tarefa ("está com o
+órgão — nada a fazer"), que é o denominador da frase.
+
+Filtrar por bola também não bastaria: dos 396 marcos abertos, 355 são "nossos".
 O corte vem do cruzamento com o que se moveu.
+
+Marco de CLIENTE (instrumento nulo, como o agregado de prestações paradas) fica
+FORA: é backlog permanente, não notícia do dia. Incluí-lo fez "8 mudanças → 9
+pedem sua ação", com o numerador passando o denominador e destruindo a frase que
+dá sentido à mensagem. Ele vive na mesa, que a mensagem linka.
 
 ## Silêncio é resposta
 
@@ -86,26 +96,35 @@ def montar(dia: date | None = None) -> dict:
 
     mesa = _mesa_por_instrumento()
     acionaveis, com_orgao, sem_marco = [], 0, 0
+
+    def _somar(item: dict, ente: str, rotulo: str, de=None, para=None) -> None:
+        acionaveis.append({
+            "cnpj": item["cnpj"], "cliente": item["cliente"] or ente,
+            "instrumento": item["instrumento"], "rotulo": rotulo,
+            "rank": item["rank"], "faixa": item["faixa"], "dias": item["dias"],
+            "passo": item["proximo_passo"], "peca": item.get("peca"), "de": de, "para": para,
+        })
+
     for cnpj, ente, rotulo, instrumento, de, para in eventos:
         chave = (cnpj, str(instrumento)) if instrumento else None
         if chave is None or chave not in bolas:
             sem_marco += 1          # sem marco: o motor não tem o que cobrar aqui
             continue
-        if bolas[chave] != "convenente":
-            com_orgao += 1
-            continue
         item = mesa.get(chave)
-        if item is None or item["rank"] not in FAIXAS_ACIONAVEIS:
-            # bola nossa, mas sem prazo aberto (ex.: prestação já entregue) ou
-            # em faixa de vigilância — não é tarefa do dia
-            continue
-        acionaveis.append({
-            "cnpj": cnpj, "cliente": item["cliente"] or ente, "instrumento": instrumento,
-            "rotulo": rotulo, "rank": item["rank"], "faixa": item["faixa"],
-            "dias": item["dias"], "passo": item["proximo_passo"],
-            "peca": item.get("peca"), "de": de, "para": para,
-        })
+        # 🔴 A FAIXA MANDA, não a bola. "Cobrar o órgão (art. 97)" é faixa
+        # acionável COM a bola no concedente — e é tarefa nossa, porque o órgão
+        # não se cobra sozinho. Filtrar por bola descartava os 41 itens de
+        # cobrança, justamente onde o cliente tem alavanca e a peça está pronta.
+        if item is not None and item["rank"] in FAIXAS_ACIONAVEIS:
+            _somar(item, ente, rotulo, de, para)
+        elif bolas[chave] != "convenente":
+            com_orgao += 1
 
+    # Marcos de CLIENTE (instrumento nulo) NÃO entram aqui. O motor junta todas
+    # as prestações paradas do convenente num marco só, e isso é BACKLOG
+    # permanente, não notícia do dia: enfiá-los no cálculo fez "8 mudanças → 9
+    # pedem sua ação", com o numerador passando o denominador e destruindo a
+    # frase que dá sentido à mensagem. Eles vivem na mesa, que a mensagem linka.
     acionaveis.sort(key=lambda i: (i["rank"], i["dias"] if i["dias"] is not None else 99999))
     return {"dia": dia.isoformat(), "mudancas": len(eventos), "acionaveis": acionaveis,
             "com_orgao": com_orgao, "sem_marco": sem_marco, "mesa_aberta": len(mesa)}

@@ -261,8 +261,14 @@ def cobranca_analise(doc: str, id_proposta=None, hoje: date | None = None) -> di
             "markdown": montar_cobranca_analise(cli, doc, det, hoje)}
 
 
+def conferencia_parcela(doc: str, id_item, hoje: date | None = None) -> dict:
+    """A parcela saiu? Conferida contra o extrato (ver app.conferencia)."""
+    from app.conferencia import markdown
+    return markdown(doc, id_item)
+
+
 GERADORES = {"cobranca-art97": cobranca_art97, "resposta-diligencia": resposta_diligencia,
-             "cobranca-analise": cobranca_analise}
+             "cobranca-analise": cobranca_analise, "conferencia-parcela": conferencia_parcela}
 
 # Qual peça serve cada marco. É o mapa que a triagem consulta para dizer
 # "minuta pronta" em vez de só "responda a diligência" — o operador chega no
@@ -274,6 +280,10 @@ PECA_POR_MARCO = {
     # prestação de contas não é ofício: a peça é o CHECKLIST do dossiê, que diz
     # documento a documento o que falta juntar (db/0024)
     "prestacao_contas": ("dossie", "Checklist do dossiê"),
+    # a parcela não pede ofício: pede CONFERIR se o dinheiro entrou. O documento
+    # é o extrato da conta da parceria — os outros elos da cadeia (NE, DH, OP)
+    # estão vazios no recorte, e conferir o que não existe seria teatro.
+    "parcela_prevista": ("conferencia-parcela", "Conferência de parcela"),
 }
 
 
