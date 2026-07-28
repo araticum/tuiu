@@ -60,6 +60,7 @@ data nem artigo de lei que não esteja lá.
 2. O texto tem marcadores como [[CLIENTE]], [[CNPJ]], [[PESSOA_1]]. COPIE-OS EXATAMENTE como \
 estão, na mesma forma. Nunca traduza, complete nem substitua um marcador por um nome.
 3. Estruture ponto a ponto: cada exigência do órgão vira um item numerado da resposta.
+3a. RESPONDA À EXIGÊNCIA, NÃO AO CONTEXTO. Só o bloco "EXIGÊNCIA DO ÓRGÃO" é o que se responde. Os demais blocos são material de apoio: use o que ajudar a responder e IGNORE o resto. Nunca escreva um item comentando as regras vigentes, o acervo ou o dossiê — o órgão não perguntou isso, e responder o que não foi perguntado enfraquece a peça.
 4. Onde faltar informação que só a entidade tem (número de documento, valor, data, anexo), \
 escreva um campo entre colchetes para preencher, assim: [informar o nº do empenho]. É melhor \
 um campo em branco do que um dado inventado.
@@ -132,7 +133,12 @@ def redigir(doc: str, id_proposta, forcar: bool = False) -> dict:
     if not m["pronto"]:
         return {"disponivel": False, "erro": m["erro"]}
 
-    limpo, mapa = mascarar(m["parecer"], m["conhecidos"])
+    # O CONTEXTO é o que separa peça de redação vazia: o primeiro rascunho real
+    # saiu genérico porque o modelo só via o parecer. Ver app.dossie_contexto.
+    from app.dossie_contexto import citacoes_soltas, montar as montar_contexto
+    with conectar() as con:
+        ctx = montar_contexto(con, m["doc"], id_proposta, m["parecer"])
+    limpo, mapa = mascarar(ctx["texto"], m["conhecidos"])
     escapou = vazou(limpo, mapa)
     if escapou:
         # a máscara falhou: não manda. Não há como desfazer dado que saiu.
@@ -159,19 +165,24 @@ def redigir(doc: str, id_proposta, forcar: bool = False) -> dict:
         return {"disponivel": False, "erro": f"falha na geração: {type(exc).__name__}: {exc}"}
 
     faltando = perdidos(r["texto"], mapa)
+    soltas = citacoes_soltas(r["texto"], ctx["texto"])
     # marcador que o modelo inventou fora da lista fica visível no aviso: é
     # campo que ninguém consegue preencher, e some se a gente calar
     inventados = sorted(set(MARCADOR_NO_TEXTO.findall(r["texto"])) - set(mapa_volta))
     return {"disponivel": True, "markdown": recompor(r["texto"], mapa_volta),
             "marcadores_inventados": inventados,
             "titulo": f"Rascunho de resposta — proposta {id_proposta}",
+            "citacoes_soltas": soltas, "blocos_de_contexto": sorted(ctx["blocos"]),
             "modelo": MODELO, "marcadores_perdidos": faltando,
             "tokens_entrada": r["tokens_entrada"], "tokens_saida": r["tokens_saida"],
             "aviso": ("RASCUNHO gerado por IA sobre a exigência do órgão — revise antes de enviar."
                       + (f" ⚠️ o modelo não devolveu {', '.join(faltando)}: confira os nomes."
                          if faltando else "")
                       + (f" ⚠️ inventou {', '.join(inventados)} — campo sem valor, apague ou preencha."
-                         if inventados else ""))}
+                         if inventados else "")
+                      + (f" 🔴 CITAÇÃO NÃO ANCORADA: {', '.join(soltas)} — não está no acervo "
+                         f"fornecido; confira antes de assinar."
+                         if soltas else ""))}
 
 
 def main():
