@@ -273,7 +273,8 @@ def minuta(doc: str, tipo: str = "cobranca-art97", proposta: str = "", formato: 
     gerar = GERADORES.get(tipo)
     if gerar is None:
         raise HTTPException(404, "tipo de minuta desconhecido")
-    if not proposta:
+    # a cobrança do legado é do CLIENTE (agregado), não de um instrumento
+    if not proposta and tipo != "cobranca-analise":
         raise HTTPException(400, "informe a proposta")
     d = gerar(doc, proposta)
     if not d.get("disponivel"):

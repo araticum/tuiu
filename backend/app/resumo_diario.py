@@ -103,7 +103,7 @@ def montar(dia: date | None = None) -> dict:
             "cnpj": cnpj, "cliente": item["cliente"] or ente, "instrumento": instrumento,
             "rotulo": rotulo, "rank": item["rank"], "faixa": item["faixa"],
             "dias": item["dias"], "passo": item["proximo_passo"],
-            "de": de, "para": para,
+            "peca": item.get("peca"), "de": de, "para": para,
         })
 
     acionaveis.sort(key=lambda i: (i["rank"], i["dias"] if i["dias"] is not None else 99999))
@@ -120,7 +120,10 @@ def _prazo(item: dict) -> str:
 
 def linha_item(item: dict) -> str:
     """Uma linha por item — parâmetro de template não aceita quebra de linha."""
-    texto = (f"{item['cliente'][:40]} · {item['rotulo']}{_prazo(item)} — {item['passo']}")
+    # a PEÇA no fim da linha é o ponto do pedido do dono (28/07): a triagem não
+    # diz só o que fazer, entrega o rascunho já montado
+    peca = f" · {item['peca']['titulo'].lower()} pronta" if item.get("peca") else ""
+    texto = (f"{item['cliente'][:40]} · {item['rotulo']}{_prazo(item)} — {item['passo']}{peca}")
     return texto[:LIMITE_ITEM - 1] + "…" if len(texto) > LIMITE_ITEM else texto
 
 
@@ -148,7 +151,10 @@ def texto(r: dict, console_url: str) -> str:
     """Versão legível para outbox/log — aqui a quebra de linha é permitida."""
     linhas = [f"📋 Tuiú · resumo de {r['dia'][8:10]}/{r['dia'][5:7]}",
               "", f"{r['mudancas']} mudança(s) hoje · {len(r['acionaveis'])} pede(m) sua ação", ""]
-    linhas += [f"{n}. {linha_item(i)}" for n, i in enumerate(r["acionaveis"][:TOPO], 1)]
+    for n, i in enumerate(r["acionaveis"][:TOPO], 1):
+        linhas.append(f"{n}. {linha_item(i)}")
+        if i.get("peca"):
+            linhas.append(f"   → {i['peca']['titulo']}: {i['peca']['url']}")
     resto = len(r["acionaveis"]) - TOPO
     if resto > 0:
         linhas.append(f"…e mais {resto} na mesa.")

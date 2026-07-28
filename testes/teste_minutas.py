@@ -72,3 +72,43 @@ def test_diligencia_transcreve_o_parecer():
 def test_diligencia_sem_parecer_nao_quebra():
     md = montar_diligencia(CLI, DOC, 5, {}, {}, HOJE)
     assert "consultar a diligência no Transferegov" in md
+
+
+# --------------------------------------- cobrança do art. 97 no caso LEGADO
+def test_cobranca_do_legado_lista_todas_as_prestacoes_paradas():
+    """Peça irmã da do ciclo novo, não a mesma: aqui o marco é um AGREGADO por
+    cliente (`piores[]`), não por proposta. Um ofício por prestação seria uma
+    pilha de cartas idênticas para o mesmo órgão."""
+    from datetime import date
+
+    from app.minutas import montar_cobranca_analise
+
+    cli = {"nome": "ENTIDADE EXEMPLO", "municipio": "Brasília", "uf": "DF",
+           "representante": "Fulano de Tal", "papel_rep": "Presidente"}
+    det = {"limite_dias": 180, "total": 17, "piores": [
+        {"instrumento": "897963", "dias": 1124, "desde": "2023-06-30",
+         "situacao": "PRESTACAO_CONTAS_ENVIADA_ANALISE"},
+        {"instrumento": "909906", "dias": 1051, "desde": "2023-09-11",
+         "situacao": "PRESTACAO_CONTAS_ENVIADA_ANALISE"},
+    ]}
+    md = montar_cobranca_analise(cli, "03686998000118", det, date(2026, 7, 28))
+
+    assert "art. 97" in md and "180 dias" in md
+    assert "897963" in md and "1124" in md
+    assert "**17**" in md, "o total tem que aparecer, não só as piores"
+    # a carta lista o que tem e DECLARA quantas ficaram de fora — omitir o resto
+    # faria o órgão responder só as duas listadas
+    assert "e outras 15" in md
+    # enum cru do CSV não pode ir num ofício para o órgão
+    assert "PRESTACAO_CONTAS_ENVIADA_ANALISE" not in md
+    assert "CPF: ____" in md, "assinatura sem CPF preenchido (LGPD)"
+
+
+def test_peca_de_cobre_os_marcos_que_tem_rascunho():
+    from app.minutas import peca_de
+    C = "https://tuiu.araticum.net"
+    assert peca_de("analise_parada_concedente", "123", None, C)["tipo"] == "cobranca-analise"
+    assert peca_de("proposta_parada", "123", "555", C)["tipo"] == "cobranca-art97"
+    assert peca_de("complementacao_pendente", "123", "555", C)["tipo"] == "resposta-diligencia"
+    assert peca_de("prestacao_contas", "123", "9", C)["url"].endswith("cliente.html?doc=123")
+    assert peca_de("parcela_prevista", "123", "9", C) is None, "conferência não é documento"

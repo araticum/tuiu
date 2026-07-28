@@ -18,10 +18,12 @@ from __future__ import annotations
 from datetime import date
 
 from app.db import conectar
+from app.notificador import CONSOLE_URL
 from app.dossie import percentuais as dossie_percentuais
 from app.execucao import por_instrumento
 from app.fila import _acoes
 from app.parecer import resumo as resumo_parecer
+from app.minutas import peca_de
 
 # Faixas da mesa — o rank ordena o backlog (0 = mais urgente); o rótulo é o que o
 # operador lê. Espelha a taxonomia em camadas da planilha do Danilo, derivada do
@@ -122,6 +124,9 @@ def montar(cliente: str | None = None) -> dict:
                 "dossie": dossies.get((cnpj, instr)) if instr and tipo in (
                     "prestacao_contas", "complementacao_pendente") else None,
                 "tem_dossie": bool(instr and tipo in ("prestacao_contas", "complementacao_pendente")),
+                # a peça pronta do item: o operador chega no rascunho, não na
+                # tarefa em branco (ver minutas.PECA_POR_MARCO)
+                "peca": peca_de(tipo, cnpj, instr, CONSOLE_URL),
             })
 
     abertos = [i for i in itens if i["status"] in ("aberto", "em_andamento")]
