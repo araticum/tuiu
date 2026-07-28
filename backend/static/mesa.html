@@ -224,7 +224,12 @@ function fecharDossie(){ document.getElementById("mbg").style.display="none";
   if(dossieMexeu) render();   // atualiza os chips do board de uma vez
 }
 
-fetch("/api/mesa").then(r=>r.json()).then(d=>{
+// `?cliente=<cnpj>` filtra a mesa — é para onde o resumo diário aponta quando a
+// peça do item é o checklist do dossiê, que só existe AQUI (a ficha do cliente
+// não tem dossiê nenhum). Sem isto o link caía numa página sem a peça.
+const clienteFiltro = new URLSearchParams(location.search).get("cliente");
+fetch("/api/mesa" + (clienteFiltro ? `?cliente=${encodeURIComponent(clienteFiltro)}` : ""))
+  .then(r=>r.json()).then(d=>{
   if(!d.disponivel){ document.getElementById("board").innerHTML = `<div class="vazio">indisponível: ${esc(d.erro||"—")}</div>`; return; }
   DADOS = d; render();
 });

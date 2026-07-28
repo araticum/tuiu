@@ -110,7 +110,10 @@ def test_peca_de_cobre_os_marcos_que_tem_rascunho():
     assert peca_de("analise_parada_concedente", "123", None, C)["tipo"] == "cobranca-analise"
     assert peca_de("proposta_parada", "123", "555", C)["tipo"] == "cobranca-art97"
     assert peca_de("complementacao_pendente", "123", "555", C)["tipo"] == "resposta-diligencia"
-    assert peca_de("prestacao_contas", "123", "9", C)["url"].endswith("cliente.html?doc=123")
+    # MESA e não ficha: o checklist do dossiê só existe na mesa; `cliente.html`
+    # não tem uma linha de dossiê, e o link levava 79% dos itens para uma
+    # página sem a peça
+    assert peca_de("prestacao_contas", "123", "9", C)["url"].endswith("mesa.html?cliente=123")
     # a parcela não pede ofício, pede CONFERIR se o dinheiro entrou — e o
     # documento é o extrato da conta (os outros elos da cadeia estão vazios)
     assert peca_de("parcela_prevista", "123", "9", C)["tipo"] == "conferencia-parcela"

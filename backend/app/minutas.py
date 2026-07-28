@@ -294,7 +294,10 @@ def peca_de(tipo_marco: str, cnpj: str, instrumento, console_url: str) -> dict |
         return None
     chave, titulo = achado
     if chave == "dossie":
-        url = f"{console_url}/cliente.html?doc={cnpj}"
+        # MESA, não ficha do cliente: o checklist do dossiê só existe aqui (o
+        # chip e o modal). `cliente.html` não tem uma linha de dossiê — o link
+        # levava 79% dos itens para uma página sem a peça.
+        url = f"{console_url}/mesa.html?cliente={cnpj}"
     else:
         url = f"{console_url}/api/minuta/{cnpj}?tipo={chave}&proposta={instrumento or '-'}"
     return {"tipo": chave, "titulo": titulo, "url": url}
