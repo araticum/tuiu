@@ -19,7 +19,10 @@ CHAVES_NOTIFICACAO = ("notificacoes_ativas", "canal_seriema", "canal_whatsapp", 
                       # modo: false (padrão) = um resumo por dia; true = uma
                       # mensagem por evento. Os dois juntos são a enxurrada que
                       # o resumo veio evitar — ver db/0028.
-                      "alerta_por_evento")
+                      "alerta_por_evento",
+                      # etapa B: redacao do rascunho por IA (DeepInfra), com o
+                      # texto pseudonimizado. Ver db/0029 e app.redator.
+                      "redacao_ia")
 _VERDADEIROS = ("true", "1", "sim", "on", "yes")
 
 
