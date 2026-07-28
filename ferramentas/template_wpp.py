@@ -135,7 +135,7 @@ def _waba() -> str:
 
 
 def _chamar(metodo: str, caminho: str, payload: dict | None = None) -> dict:
-    url = f"{wpp_cloud.BASE_GRAPH}/{wpp_cloud._cfg('TUIU_WPP_VERSAO', 'v21.0')}/{caminho}"
+    url = f"{wpp_cloud.BASE_GRAPH}/{wpp_cloud._cfg('TUIU_WPP_VERSAO', 'v23.0')}/{caminho}"
     dados = json.dumps(payload, ensure_ascii=False).encode() if payload else None
     req = urllib.request.Request(url, data=dados, method=metodo, headers={
         "Authorization": f"Bearer {_token()}", "Content-Type": "application/json"})

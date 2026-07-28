@@ -118,18 +118,30 @@ def _cabecalhos_assinados(secret: str, metodo: str, caminho: str, corpo: bytes,
     }
 
 
-def _enviar_nuvem(parametros: list[str], timeout: float,
+def _enviar_nuvem(texto: str, parametros: list[str], timeout: float,
                   template: str | None = None) -> tuple[bool, str]:
-    """Um template por número de quem opera.
+    """Uma mensagem por número de quem opera.
+
+    **Texto livre quando a janela de 24h está aberta; template quando fechada.**
+    Não é contorno de template pendente: para o canal INTERNO o texto livre é
+    melhor mensagem — cabe quebra de linha e o link de cada peça, coisas que o
+    parâmetro de template não aceita. O template existe para o dia em que
+    ninguém da equipe escreveu nas últimas 24h.
 
     Falha se QUALQUER destino falhar: aviso que chega pela metade é aviso
     quebrado, e a entrega tem que ficar registrada como erro para alguém olhar.
     """
+    from app import wpp_webhook
+
     destinos = destinos_nuvem()
     entregues, erros = [], []
     for destino in destinos:
-        ok, detalhe = wpp_cloud.enviar_template(destino, parametros, timeout=timeout,
-                                                template=template)
+        if texto and wpp_webhook.janela_aberta(destino):
+            ok, detalhe = wpp_cloud.enviar_texto(destino, texto, timeout=timeout)
+            detalhe = f"texto livre · {detalhe}"
+        else:
+            ok, detalhe = wpp_cloud.enviar_template(destino, parametros, timeout=timeout,
+                                                    template=template)
         (entregues if ok else erros).append(f"{destino}: {detalhe}")
     if erros:
         return False, f"{len(erros)}/{len(destinos)} falharam — " + " | ".join(erros)
@@ -140,11 +152,13 @@ def enviar_grupo(texto: str, chave_entrega: str, parametros: list[str] | None = 
                  timeout: float = 15.0, template: str | None = None) -> tuple[bool, str]:
     """Envia a quem opera. Retorna (ok, detalhe). Nunca levanta.
 
-    `parametros` são os campos do template e só valem no transporte de nuvem —
-    lá não existe texto livre fora da janela de 24h. Sem eles, o envio é
+    `parametros` são os campos do template, exigidos no transporte de nuvem
+    porque fora da janela de 24h só template entrega. Sem eles, o envio é
     RECUSADO em vez de remontar os campos a partir do texto formatado:
     desmontar a mensagem de volta adivinha, e adivinhar o nome do cliente num
     aviso operacional é pior do que não mandar.
+
+    Dentro da janela, o `texto` é preferido — ver `_enviar_nuvem`.
     """
     texto = (texto or "").strip()
     if not texto:
@@ -157,7 +171,7 @@ def enviar_grupo(texto: str, chave_entrega: str, parametros: list[str] | None = 
     if provedor() == PROVEDOR_NUVEM:
         if not parametros:
             return False, "transporte cloud_api exige `parametros` do template"
-        return _enviar_nuvem(parametros, timeout, template)
+        return _enviar_nuvem(texto, parametros, timeout, template)
 
     payload = {
         "group_id": _cfg("TUIU_SERIEMA_GROUP_ID"),
