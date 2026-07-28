@@ -46,11 +46,20 @@ def checklist_estado(cnpj: str, instrumento: str) -> dict:
                 " WHERE cnpj=%s AND instrumento=%s", (doc, str(instrumento))):
             marcado[item] = {"feito": feito, "nota": nota, "por": por,
                              "quando": quando.isoformat() if quando else None}
+        # EVIDENCIADO não é FEITO: o dado aberto registra que o documento
+        # existe; feito é alguém da casa ter conferido e anexado. O órgão pede o
+        # documento, não a notícia de que ele existe — marcar automático seria
+        # mentir para quem presta contas. O que a evidência faz é tirar o
+        # operador do zero: ele sabe o que procurar, onde e quantos.
+        from app.evidencia import do_instrumento
+        evid = do_instrumento(doc, str(instrumento), con)
+
     itens = [{"item": k, "rotulo": r, **{"feito": False, "nota": None},
-              **marcado.get(k, {})} for k, r in ITENS_DOSSIE]
+              **marcado.get(k, {}), "evidencia": evid.get(k)} for k, r in ITENS_DOSSIE]
     n = sum(1 for i in itens if i["feito"])
+    n_evid = sum(1 for i in itens if i.get("evidencia") and not i["feito"])
     return {"cnpj": doc, "instrumento": str(instrumento), "itens": itens,
-            "feitos": n, "total": len(ITENS_DOSSIE),
+            "feitos": n, "evidenciados": n_evid, "total": len(ITENS_DOSSIE),
             "pct": round(100 * n / len(ITENS_DOSSIE)) if ITENS_DOSSIE else 0}
 
 

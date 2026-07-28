@@ -99,11 +99,18 @@ def _bloco_dossie(doc: str, instrumento: str) -> list[str]:
         return []
     feitos = [i for i in itens if i.get("feito")]
     faltam = [i for i in itens if not i.get("feito")]
-    linhas = [f"Dossiê: {len(feitos)} de {len(itens)} itens reunidos."]
+    evidenciados = [i for i in itens if i.get("evidencia") and not i.get("feito")]
+    linhas = [f"Dossiê: {len(feitos)} de {len(itens)} itens conferidos e anexados."]
     if feitos:
-        linhas.append("JÁ TEMOS: " + "; ".join(i.get("rotulo") or i.get("item") for i in feitos))
-    if faltam:
-        linhas.append("AINDA FALTA: " + "; ".join(i.get("rotulo") or i.get("item") for i in faltam))
+        linhas.append("JÁ ANEXADO: " + "; ".join(i.get("rotulo") or i.get("item") for i in feitos))
+    if evidenciados:
+        # o que o dado aberto REGISTRA — dá para citar na peça ("os 3 contratos
+        # constam do SICONV"), mas não substitui o documento anexado
+        linhas.append("REGISTRADO NO DADO ABERTO (existe, falta anexar): " + "; ".join(
+            f"{i.get('rotulo')} — {', '.join(i['evidencia']['quantos'])}" for i in evidenciados))
+    sem_pista = [i for i in faltam if not i.get("evidencia")]
+    if sem_pista:
+        linhas.append("SEM REGISTRO: " + "; ".join(i.get("rotulo") or i.get("item") for i in sem_pista))
     return linhas
 
 

@@ -29,6 +29,21 @@ DOWNLOADS = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov"
 # o historico de situacao (102 MB) e o que diz HA QUANTO TEMPO a prestacao
 # esta parada na analise do concedente — sem ele nao da para acusar o art. 97
 ZIPS_DETRU = ["siconv_convenio.zip", "siconv_proposta.zip", "siconv_historico_situacao.zip"]
+
+# Arquivos que EVIDENCIAM o dossiê (db/0024). O checklist estava 100% em branco
+# — servia para saber o que reunir, não para mostrar o que já existe. Estes 7
+# provam 5 dos 8 itens a partir de dado aberto. São 6 (177 MB): o
+# `siconv_obtv_convenente` saiu depois de baixado — é chaveado por NR_MOV_FIN
+# e não liga ao convênio sem outro arquivo; `desembolso` já cobre o item.
+#
+# Semanal, não diário: contrato, aditivo e OBTV mudam devagar, e 235 MB por dia
+# seria pagar caro por frescor que ninguém usa. Fora da lista de propósito:
+# `siconv_pagamento.zip` (364 MB, o maior de todos, evidenciaria nota fiscal) —
+# entra se o item virar prioridade.
+ZIPS_DOCUMENTAIS = ["siconv_solicitacao_rendimento_aplicacao.zip", "siconv_prorroga_oficio.zip",
+                    "siconv_desembolso.zip", "siconv_licitacao.zip",
+                    "siconv_termo_aditivo.zip", "siconv_contrato.zip"]
+IDADE_MAX_DOCUMENTAL_H = 24 * 7
 IDADE_MAX_H = 20
 
 
@@ -57,12 +72,13 @@ def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
     _log(fh, f"OK {nome} ok ({round(time.time() - t0, 1)}s)")
 
 
-def _refresh_detru(fh):
+def _refresh_detru(fh, zips=None, idade_max=None):
     CACHE_DETRU.mkdir(parents=True, exist_ok=True)
-    for nome in ZIPS_DETRU:
+    idade_max = IDADE_MAX_H if idade_max is None else idade_max
+    for nome in (zips or ZIPS_DETRU):
         alvo = CACHE_DETRU / nome
         idade_h = (time.time() - alvo.stat().st_mtime) / 3600 if alvo.exists() else 1e9
-        if idade_h <= IDADE_MAX_H:
+        if idade_h <= idade_max:
             _log(fh, f"detru {nome}: cache fresco ({idade_h:.1f}h) — mantido")
             continue
         _log(fh, f"detru {nome}: baixando (cache com {idade_h:.1f}h)")
@@ -178,7 +194,10 @@ def main():
         _passo(fh, "recorte g2 (clientes da carteira)", [py, "ingest/transferegov_g2/recorte_ente.py"])
         if not args.sem_detru:
             _refresh_detru(fh)
-            _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
+            # semanal: contrato, aditivo e OBTV mudam devagar, e sao 235 MB. Sem
+        # eles o checklist do dossie fica 100% em branco (era assim ate 28/07).
+        _refresh_detru(fh, ZIPS_DOCUMENTAIS, IDADE_MAX_DOCUMENTAL_H)
+        _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
         _passo(fh, "regularidade do terceiro (CEPIM/CEIS/CNEP)",
                [py, "ingest/transparencia/coletar_regularidade.py"])
         _passo(fh, "conferencia de integridade (g2 ao vivo)", [py, "ingest/transferegov_g2/verificar.py"])
