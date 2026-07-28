@@ -45,6 +45,19 @@ from app.carteira import snapshot_mais_recente
 
 TOLERANCIA = 0.02      # 2% — arredondamento de tarifa/centavo, não parcela parcial
 
+# 🔴 Crédito NEM SEMPRE é dinheiro entrando. Medido no extrato real da carteira:
+#
+#   Resgate Automático   20 lanç.  R$ 14,2 mi   aplicação -> conta corrente
+#   Movimento do Dia      3 lanç.  R$ 13,25 mi  crédito E débito no MESMO valor,
+#                                               entre as duas contas da parceria
+#
+# Contar isso como repasse inventa dinheiro que não entrou — e o primeiro teste
+# com dado real dizia "há crédito, concilie" num caso em que repasse nenhum
+# houve. É BLOQUEIO, não permissão, de propósito: tipo novo desconhecido passa e
+# vira conciliação (o operador olha à toa), enquanto uma permissão fechada
+# esconderia repasse legítimo e mandaria cobrar o órgão sem razão.
+OPERACAO_INTERNA = ("resgate", "movimento do dia", "aplic")
+
 
 def _linhas(doc: str, rota: str) -> list[dict]:
     snap = snapshot_mais_recente()
@@ -79,9 +92,15 @@ def _creditos(doc: str, contas: list[dict], desde: date) -> list[dict]:
                 continue
         except ValueError:
             continue
+        tipo = e.get("nm_tipo_operacao") or ""
         out.append({"quando": quando, "valor": float(e.get("vl_lancamento_extrato_bancario") or 0),
-                    "tipo": e.get("nm_tipo_operacao")})
+                    "tipo": tipo, "interno": _e_interno(tipo)})
     return sorted(out, key=lambda x: x["quando"])
+
+
+def _e_interno(tipo: str) -> bool:
+    t = (tipo or "").lower()
+    return any(marca in t for marca in OPERACAO_INTERNA)
 
 
 def conferir(doc: str, id_item_cronograma) -> dict:
@@ -103,7 +122,9 @@ def conferir(doc: str, id_item_cronograma) -> dict:
 
     valor = float(item.get("vl_cronograma_desembolso") or 0)
     contas = _contas_da_proposta(doc, item.get("id_proposta"))
-    creditos = _creditos(doc, contas, desde)
+    todos = _creditos(doc, contas, desde)
+    creditos = [c for c in todos if not c["interno"]]      # só dinheiro que ENTROU
+    internos = [c for c in todos if c["interno"]]
     compativel = [c for c in creditos if valor and abs(c["valor"] - valor) <= valor * TOLERANCIA]
 
     if not contas:
@@ -118,7 +139,7 @@ def conferir(doc: str, id_item_cronograma) -> dict:
     return {"disponivel": True, "veredito": veredito, "prevista": prevista.isoformat(),
             "valor": valor, "origem": item.get("origem_recurso"),
             "id_proposta": item.get("id_proposta"), "contas": contas,
-            "creditos": creditos, "compativel": compativel}
+            "creditos": creditos, "internos": internos, "compativel": compativel}
 
 
 def _brl(v: float) -> str:
@@ -159,6 +180,15 @@ def markdown(doc: str, id_item_cronograma) -> dict:
         f"| {_br(c['quando'])} | {_brl(c['valor'])} | {c['tipo'] or '—'} |"
         for c in d["creditos"]) or "| — | _nenhum crédito no período_ | — |"
 
+    # declarar o que foi filtrado: esconder o filtro seria pior que não filtrar —
+    # o operador veria "nenhum crédito" com o extrato cheio de linhas e não
+    # entenderia por quê
+    internos = d.get("internos") or []
+    nota_interna = (
+        f"\n\n_({len(internos)} lançamento(s) de movimentação interna — resgate de aplicação "
+        f"e transferência entre as contas da própria parceria — ficaram de fora: "
+        f"não são repasse.)_" if internos else "")
+
     return {"disponivel": True, "veredito": d["veredito"],
             "titulo": f"Conferência de parcela — {_brl(d['valor'])} prevista para {_br(d['prevista'])}",
             "markdown": (
@@ -168,7 +198,7 @@ def markdown(doc: str, id_item_cronograma) -> dict:
                 f"proposta nº {d.get('id_proposta')}.\n\n"
                 f"**Conta(s) da parceria:**\n{contas}\n\n"
                 f"**Créditos no extrato a partir de {_br(d['prevista'])[3:]}:**\n\n"
-                f"| Data | Valor | Operação |\n|---|---:|---|\n{lancamentos}\n\n"
+                f"| Data | Valor | Operação |\n|---|---:|---|\n{lancamentos}{nota_interna}\n\n"
                 f"**O que fazer:** {acao}\n\n"
                 f"---\n_Conferido contra o extrato bancário da conta da parceria — único elo "
                 f"da cadeia NE→DH→OP→OB presente no dado aberto desta carteira. Ausência de "

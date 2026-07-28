@@ -47,9 +47,13 @@ def _monta(monkeypatch, extrato):
 
 
 def _lanc(valor, quando="2026-06-22T00:00:00", tipo="Crédito"):
+    # TED é o repasse de verdade: 226 lançamentos, R$ 43,6 mi no extrato real da
+    # carteira. (O padrão antes era "Movimento do Dia", que é transferência entre
+    # as contas da própria parceria — fixture que representava o caso errado.)
     return {"id_parceria_conta": 348, "in_transacao": tipo,
             "dt_movimento_lancamento_extrato_bancario": quando,
-            "vl_lancamento_extrato_bancario": valor, "nm_tipo_operacao": "Movimento do Dia"}
+            "vl_lancamento_extrato_bancario": valor,
+            "nm_tipo_operacao": "TED Transferência Eletr.Dispon"}
 
 
 def test_credito_no_valor_previsto_e_liberada(monkeypatch):
@@ -130,3 +134,48 @@ def test_aviso_do_banco_aparece_quando_ha(monkeypatch):
              "parceria-conta": [conta], "extrato-bancario": []}
     monkeypatch.setattr(conferencia, "_linhas", lambda doc, rota: dados.get(rota, []))
     assert "não a débitos" in conferencia.markdown("123", 77)["markdown"]
+
+
+# ------------------------------------------- crédito que NÃO é dinheiro entrando
+@pytest.mark.parametrize("tipo", ["Resgate Automático", "Movimento do Dia",
+                                  "BB-APLIC C.PRZ-APL.AUT"])
+def test_movimentacao_interna_nao_conta_como_repasse(monkeypatch, tipo):
+    """Medido no extrato real: 20 lançamentos de 'Resgate Automático' (R$ 14,2 mi)
+    e 3 de 'Movimento do Dia' com crédito E débito no MESMO valor — dinheiro
+    andando entre as contas da própria parceria. Contar como repasse inventa
+    entrada que não houve; o primeiro teste com dado real dizia 'há crédito,
+    concilie' num caso sem repasse nenhum."""
+    _monta(monkeypatch, [_lanc(510713.85, tipo="Crédito")])
+    # o tipo de OPERAÇÃO é que decide, não o sentido do lançamento
+    dados = {"cronograma-desembolso": [ITEM], "parceria": [PARCERIA], "parceria-conta": [CONTA],
+             "extrato-bancario": [{**_lanc(510713.85), "nm_tipo_operacao": tipo}]}
+    monkeypatch.setattr(conferencia, "_linhas", lambda doc, rota: dados.get(rota, []))
+    d = conferencia.conferir("123", 77)
+    assert d["veredito"] == "sem_credito"
+    assert len(d["internos"]) == 1 and d["creditos"] == []
+
+
+def test_ted_e_pix_contam_como_repasse(monkeypatch):
+    """Os 226 TEDs (R$ 43,6 mi) do extrato real são o repasse de verdade."""
+    for tipo in ("TED Transferência Eletr.Dispon", "Pix Recebido", "Transferência recebida"):
+        dados = {"cronograma-desembolso": [ITEM], "parceria": [PARCERIA], "parceria-conta": [CONTA],
+                 "extrato-bancario": [{**_lanc(510713.85), "nm_tipo_operacao": tipo}]}
+        monkeypatch.setattr(conferencia, "_linhas", lambda doc, rota: dados.get(rota, []))
+        assert conferencia.conferir("123", 77)["veredito"] == "liberada", tipo
+
+
+def test_tipo_desconhecido_passa_e_vira_conciliacao(monkeypatch):
+    """Bloqueio, não permissão: esconder repasse legítimo mandaria cobrar o órgão
+    sem razão, que custa mais caro que uma conferência à toa."""
+    dados = {"cronograma-desembolso": [ITEM], "parceria": [PARCERIA], "parceria-conta": [CONTA],
+             "extrato-bancario": [{**_lanc(999.00), "nm_tipo_operacao": "Modalidade Nova 2027"}]}
+    monkeypatch.setattr(conferencia, "_linhas", lambda doc, rota: dados.get(rota, []))
+    assert conferencia.conferir("123", 77)["veredito"] == "credito_divergente"
+
+
+def test_peca_declara_o_que_ficou_de_fora(monkeypatch):
+    dados = {"cronograma-desembolso": [ITEM], "parceria": [PARCERIA], "parceria-conta": [CONTA],
+             "extrato-bancario": [{**_lanc(17826.08), "nm_tipo_operacao": "Resgate Automático"}]}
+    monkeypatch.setattr(conferencia, "_linhas", lambda doc, rota: dados.get(rota, []))
+    md = conferencia.markdown("123", 77)["markdown"]
+    assert "não são repasse" in md, "esconder o filtro seria pior que não filtrar"
