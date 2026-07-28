@@ -110,7 +110,8 @@ def contexto(con, cnpj: str, instrumento: str) -> dict:
         ctx["prazo_dias"] = f"vencido há {-dias}d" if dias < 0 else (
             "vence hoje" if dias == 0 else f"em {dias}d")
     if isinstance(ultimo, dict) and (ultimo.get("parecer") or "").strip():
-        ctx["exigencia"] = ultimo["parecer"].strip()[:400]
+        from app.parecer import resumo as resumo_parecer
+        ctx["exigencia"] = resumo_parecer(ultimo["parecer"], 400)
     return ctx
 
 

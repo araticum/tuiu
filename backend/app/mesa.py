@@ -21,6 +21,7 @@ from app.db import conectar
 from app.dossie import percentuais as dossie_percentuais
 from app.execucao import por_instrumento
 from app.fila import _acoes
+from app.parecer import resumo as resumo_parecer
 
 # Faixas da mesa — o rank ordena o backlog (0 = mais urgente); o rótulo é o que o
 # operador lê. Espelha a taxonomia em camadas da planilha do Danilo, derivada do
@@ -112,7 +113,9 @@ def montar(cliente: str | None = None) -> dict:
                 "responder_ate": limite.isoformat() if limite else None, "dias": dias,
                 "tipo": tipo, "descricao": desc, "base_legal": base,
                 "proximo_passo": acoes.get(tipo, "Analisar"),
-                "exigencia": exig.strip()[:400] or None,
+                # resumo, não prefixo: pedido + prazo + consequência, que é a
+                # ordem em que o operador decide (ver app.parecer)
+                "exigencia": (resumo_parecer(exig, 400) if exig.strip() else None),
                 "ultima_fase": fases.get(cnpj),
                 "execucao": execucao.get((cnpj, instr)),   # R$ do convênio (None se g2/sem dado)
                 # % de dossiê só faz sentido em item com convênio e que peça PC
