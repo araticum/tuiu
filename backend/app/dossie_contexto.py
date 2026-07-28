@@ -107,6 +107,16 @@ def _bloco_dossie(doc: str, instrumento: str) -> list[str]:
     return linhas
 
 
+def _bloco_refs(doc: str, instrumento: str, hoje: date) -> list[str]:
+    """Onde o papel está. Vale citar numa peça: é referência VERIFICÁVEL, e
+    citar o nº do processo mostra ao órgão que sabemos de que caso se trata."""
+    try:
+        from app.referencias import do_instrumento, em_texto
+        return em_texto(do_instrumento(doc, instrumento, hoje))
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _bloco_norma(exigencia: str) -> tuple[list[str], list[str]]:
     """Trechos do acervo oficial que ancoram a resposta. Devolve (linhas, fontes)."""
     try:
@@ -153,6 +163,7 @@ def montar(con, doc: str, instrumento: str, exigencia: str, hoje: date | None = 
         "INSTRUMENTO E PRAZOS (motor de prazos do Tuiú)": _bloco_instrumento(con, doc, instrumento),
         "EXECUÇÃO FINANCEIRA (dados abertos SICONV/detru)": _bloco_dinheiro(con, doc, instrumento),
         "DOCUMENTAÇÃO JÁ REUNIDA (dossiê interno)": _bloco_dossie(doc, instrumento),
+        "REFERÊNCIAS DOCUMENTAIS (processo SEI, publicação no DOU)": _bloco_refs(doc, instrumento, hoje),
         "REGRAS VIGENTES NESTA DATA (tabela versionada)": _bloco_regra(con, hoje),
         "ACERVO OFICIAL — cite por [n] (manuais e portarias do Transferegov)": norma,
     }

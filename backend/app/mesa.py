@@ -24,6 +24,7 @@ from app.execucao import por_instrumento
 from app.fila import _acoes
 from app.parecer import resumo as resumo_parecer
 from app.minutas import peca_de
+from app.referencias import do_instrumento
 
 # Faixas da mesa — o rank ordena o backlog (0 = mais urgente); o rótulo é o que o
 # operador lê. Espelha a taxonomia em camadas da planilha do Danilo, derivada do
@@ -68,6 +69,13 @@ def _ultima_fase(con) -> dict[str, dict]:
         out[cnpj] = {"rotulo": rotulo, "transicao": (f"{de} → {para}" if de else (para or "")),
                      "quando": snap}
     return out
+
+
+def _refs(cnpj: str, instrumento) -> list[dict]:
+    try:
+        return do_instrumento(cnpj, instrumento) if instrumento else []
+    except Exception:  # noqa: BLE001 — referência é enriquecimento
+        return []
 
 
 def montar(cliente: str | None = None) -> dict:
@@ -127,6 +135,9 @@ def montar(cliente: str | None = None) -> dict:
                 # a peça pronta do item: o operador chega no rascunho, não na
                 # tarefa em branco (ver minutas.PECA_POR_MARCO)
                 "peca": peca_de(tipo, cnpj, instr, CONSOLE_URL),
+                # caminhos até o documento (SEI, DOU) — o link do SEI exige
+                # captcha e vem rotulado como tal; ver app.referencias
+                "referencias": _refs(cnpj, instr),
             })
 
     abertos = [i for i in itens if i["status"] in ("aberto", "em_andamento")]
