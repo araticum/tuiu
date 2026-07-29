@@ -124,6 +124,33 @@ def _br_hoje() -> str:
     return date.today().strftime("%d/%m/%Y")
 
 
+def _conferir_entregas(fh) -> None:
+    """A Meta ACEITAR não é a mensagem CHEGAR.
+
+    `enviar` devolve um wamid assim que a API aceita, e é isso que a cadeia
+    registrava como "enviado". A recusa vem depois, pelo webhook — e foi assim
+    que três dias de produção passaram com log verde e ninguém recebendo nada
+    (a conta estava com "Business eligibility payment issue").
+
+    Aqui a falha aparece no LOG, não só no canal: o canal é justamente o que
+    está quebrado quando isto acontece.
+    """
+    sys.path.insert(0, str(RAIZ / "backend"))
+    try:
+        from app.wpp_webhook import falhas_recentes
+        falhas = falhas_recentes(26)
+    except Exception as e:  # noqa: BLE001
+        _log(fh, f"! nao consegui conferir os recibos de entrega: {type(e).__name__}")
+        return
+    if not falhas:
+        return
+    for f in falhas:
+        _log(fh, f"!! ENTREGA RECUSADA para {f['numero']}: {f['erro']} "
+                 f"(a API aceitou, a Meta recusou depois)")
+    _log(fh, f"!! {len(falhas)} entrega(s) NAO chegaram — 'enviado' no log acima "
+             f"significa apenas que a API aceitou")
+
+
 def _conferir_frescor(fh) -> None:
     """Dado velho passando por D-1 é a falha que mais custa neste produto.
 
@@ -220,6 +247,7 @@ def main():
         # por evento (correção do Danilo, 27/07: o Transferegov já manda e-mail
         # de cada mudança). Dia sem ação não envia nada.
         _passo(fh, "resumo do dia (triagem para a equipe)", [py, "backend/app/resumo_diario.py"])
+        _conferir_entregas(fh)
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:

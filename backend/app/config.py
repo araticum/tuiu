@@ -68,6 +68,14 @@ def gravar(chave: str, valor: str, quem: str | None = None) -> dict:
     return {"chave": chave, "de": de, "para": valor}
 
 
+def _falhas() -> list[dict]:
+    try:
+        from app.wpp_webhook import falhas_recentes
+        return falhas_recentes(72)
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def estado() -> dict:
     """Estado + diagnóstico: o que está ligado E o que de fato conseguiria sair."""
     from app import seriema, wpp_cloud
@@ -115,6 +123,9 @@ def estado() -> dict:
                 "alcance": "sistema externo (URL configurada)",
             },
         },
+        # entrega que a Meta aceitou e depois recusou: "enviado" no nosso log
+        # não prova chegada, e sem isto o silêncio passou 3 dias despercebido
+        "falhas_de_entrega": _falhas(),
         "eventos_sem_envio_externo": pendentes,
         "historico": [{"chave": c, "de": d, "para": p, "quem": q,
                        "quando": w.isoformat() if w else None} for c, d, p, q, w in historico],

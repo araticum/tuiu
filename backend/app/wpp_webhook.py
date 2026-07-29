@@ -175,6 +175,29 @@ def recibos(detalhes: list[str | None]) -> dict[str, dict]:
     return {w: {"status": s, "erro": e, "em": r.isoformat()} for w, s, e, r in linhas}
 
 
+def falhas_recentes(horas: int = 48) -> list[dict]:
+    """Entregas que a Meta ACEITOU e depois recusou.
+
+    `enviar` devolver um wamid só prova que a API aceitou — a recusa vem
+    depois, pelo webhook. Foi assim que três dias de produção passaram com a
+    cadeia registrando "enviado" e ninguém recebendo nada: a conta estava com
+    "Business eligibility payment issue" e o erro só existia aqui.
+
+    A ironia é que o canal que avisaria é o mesmo que está quebrado — por isso
+    isto também vai para o log da cadeia e para a tela de notificações.
+    """
+    try:
+        with conectar() as con:
+            linhas = con.execute(
+                "SELECT numero, status, erro, recebido_em FROM wpp_entrada"
+                " WHERE tipo='status' AND status='failed'"
+                "   AND recebido_em > now() - make_interval(hours => %s)"
+                " ORDER BY recebido_em DESC", (horas,)).fetchall()
+    except Exception:  # noqa: BLE001
+        return []
+    return [{"numero": n, "status": s, "erro": e, "em": q.isoformat()} for n, s, e, q in linhas]
+
+
 def quem_escreveu(horas: int = 168) -> list[dict]:
     """Quem mandou mensagem para o número, e quando. Sem conteúdo — não existe."""
     limite = datetime.now(timezone.utc) - timedelta(hours=horas)
