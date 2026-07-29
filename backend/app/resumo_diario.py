@@ -201,13 +201,43 @@ def _prazo(item: dict) -> str:
     return f" (vencido há {-d}d)" if d < 0 else (" (hoje)" if d == 0 else f" (em {d}d)")
 
 
-def linha_item(item: dict) -> str:
-    """Uma linha por item — parâmetro de template não aceita quebra de linha."""
+def link_item(item: dict, console_url: str) -> str:
+    """Para onde o item leva: a peça pronta, ou a mesa DAQUELA transferência.
+
+    A peça ganha quando existe — é o destino mais acionável (o rascunho já
+    montado). Sem peça, o item ainda merece um link, e o genérico do rodapé não
+    serve: cai na mesa inteira, com centenas de linhas, e quem clicou tem que
+    caçar de novo o que a mensagem acabou de nomear.
+    """
+    if item.get("peca"):
+        return item["peca"]["url"]
+    alvo = f"{console_url}/mesa.html?cliente={item['cnpj']}"
+    return f"{alvo}&instrumento={item['instrumento']}" if item.get("instrumento") else alvo
+
+
+def linha_item(item: dict, link: str | None = None) -> str:
+    """Uma linha por item — parâmetro de template não aceita quebra de linha.
+
+    Com `link`, a URL entra na PRÓPRIA linha. O alerta prometia "o link da mesa
+    de trabalho de cada uma" desde o pedido original e levava só o link genérico
+    do console: a versão em texto punha a URL numa linha de baixo, e parâmetro de
+    template não tem linha de baixo.
+
+    O texto cede espaço para a URL, nunca o contrário — descrição truncada ainda
+    orienta, link truncado não abre.
+    """
+    from app.wpp_cloud import LIMITE_PARAMETRO
+
     # a PEÇA no fim da linha é o ponto do pedido do dono (28/07): a triagem não
     # diz só o que fazer, entrega o rascunho já montado
     peca = f" · {item['peca']['titulo'].lower()} pronta" if item.get("peca") else ""
     texto = (f"{item['cliente'][:40]} · {item['rotulo']}{_prazo(item)} — {item['passo']}{peca}")
-    return texto[:LIMITE_ITEM - 1] + "…" if len(texto) > LIMITE_ITEM else texto
+    if not link:
+        return texto[:LIMITE_ITEM - 1] + "…" if len(texto) > LIMITE_ITEM else texto
+    cabe = min(LIMITE_ITEM, LIMITE_PARAMETRO - len(link) - 4)
+    if len(texto) > cabe:
+        texto = texto[:max(cabe - 1, 1)].rstrip() + "…"
+    return f"{texto} → {link}"
 
 
 def parametros(r: dict, console_url: str) -> list[str]:
@@ -225,8 +255,8 @@ def parametros(r: dict, console_url: str) -> list[str]:
              (f"{r['com_orgao']} mudança(s) estão com o órgão — nada a fazer."
               if r["com_orgao"] else "Só isso hoje."))
     return [cabeca,
-            *[linha_item(i) for i in itens],
-            *["—"] * (TOPO - len(itens)),
+            *[linha_item(i, link_item(i, console_url)) for i in itens],
+            *[SEM_ITEM] * (TOPO - len(itens)),
             cauda]
 
 
@@ -236,8 +266,8 @@ def texto(r: dict, console_url: str) -> str:
               "", f"{r['mudancas']} mudança(s) hoje · {len(r['acionaveis'])} pede(m) sua ação", ""]
     for n, i in enumerate(r["acionaveis"][:TOPO], 1):
         linhas.append(f"{n}. {linha_item(i)}")
-        if i.get("peca"):
-            linhas.append(f"   → {i['peca']['titulo']}: {i['peca']['url']}")
+        rotulo = i["peca"]["titulo"] if i.get("peca") else "Mesa desta transferência"
+        linhas.append(f"   → {rotulo}: {link_item(i, console_url)}")
     resto = len(r["acionaveis"]) - TOPO
     if resto > 0:
         linhas.append(f"…e mais {resto} na mesa.")

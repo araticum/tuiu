@@ -227,11 +227,34 @@ function fecharDossie(){ document.getElementById("mbg").style.display="none";
 // `?cliente=<cnpj>` filtra a mesa — é para onde o resumo diário aponta quando a
 // peça do item é o checklist do dossiê, que só existe AQUI (a ficha do cliente
 // não tem dossiê nenhum). Sem isto o link caía numa página sem a peça.
-const clienteFiltro = new URLSearchParams(location.search).get("cliente");
+//
+// `&instrumento=<n>` estreita para UMA transferência: é a "mesa de trabalho
+// daquela transferência" que o alerta do WhatsApp promete. Filtro no cliente, e
+// não na API, de propósito — quem chega pelo link tem que conseguir voltar ao
+// contexto do cliente sem recarregar, e o aviso abaixo dá esse caminho.
+const P = new URLSearchParams(location.search);
+const clienteFiltro = P.get("cliente"), instrFiltro = P.get("instrumento");
 fetch("/api/mesa" + (clienteFiltro ? `?cliente=${encodeURIComponent(clienteFiltro)}` : ""))
   .then(r=>r.json()).then(d=>{
   if(!d.disponivel){ document.getElementById("board").innerHTML = `<div class="vazio">indisponível: ${esc(d.erro||"—")}</div>`; return; }
-  DADOS = d; render();
+  DADOS = d;
+  if(instrFiltro){
+    const alvo = DADOS.itens.filter(x=>String(x.instrumento)===String(instrFiltro));
+    // some do filtro em vez de mostrar mesa vazia: o instrumento pode ter saído
+    // da mesa entre o envio do alerta e o clique (foi resolvido, mudou de faixa)
+    if(alvo.length){
+      const resto = DADOS.itens.length - alvo.length;
+      DADOS.itens = alvo;
+      document.getElementById("board").insertAdjacentHTML("beforebegin",
+        `<div class="vazio" style="text-align:left">Mostrando só o instrumento <b>${esc(instrFiltro)}</b>`
+        + (resto ? ` · <a href="?cliente=${encodeURIComponent(clienteFiltro||"")}">ver os outros ${resto} deste cliente</a>` : "")
+        + `</div>`);
+    } else {
+      document.getElementById("board").insertAdjacentHTML("beforebegin",
+        `<div class="vazio" style="text-align:left">O instrumento <b>${esc(instrFiltro)}</b> não está mais na mesa — pode ter sido resolvido desde o aviso. Segue a mesa completa do cliente.</div>`);
+    }
+  }
+  render();
 });
 </script>
 <script src="/nav.js" defer></script>

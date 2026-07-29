@@ -297,7 +297,12 @@ def peca_de(tipo_marco: str, cnpj: str, instrumento, console_url: str) -> dict |
         # MESA, não ficha do cliente: o checklist do dossiê só existe aqui (o
         # chip e o modal). `cliente.html` não tem uma linha de dossiê — o link
         # levava 79% dos itens para uma página sem a peça.
+        # `&instrumento` estreita para a transferência do item: a mesa do
+        # cliente pode ter dezenas de linhas, e o alerta prometia a mesa DAQUELA
+        # transferência. `mesa.html` degrada sozinha se o instrumento já saiu.
         url = f"{console_url}/mesa.html?cliente={cnpj}"
+        if instrumento:
+            url += f"&instrumento={instrumento}"
     else:
         url = f"{console_url}/api/minuta/{cnpj}?tipo={chave}&proposta={instrumento or '-'}"
     return {"tipo": chave, "titulo": titulo, "url": url}

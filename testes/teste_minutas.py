@@ -113,7 +113,13 @@ def test_peca_de_cobre_os_marcos_que_tem_rascunho():
     # MESA e não ficha: o checklist do dossiê só existe na mesa; `cliente.html`
     # não tem uma linha de dossiê, e o link levava 79% dos itens para uma
     # página sem a peça
-    assert peca_de("prestacao_contas", "123", "9", C)["url"].endswith("mesa.html?cliente=123")
+    #
+    # E com `&instrumento`: a mesa de um cliente tem dezenas de linhas, e o
+    # alerta promete a mesa DAQUELA transferência, não a do cliente inteiro.
+    assert peca_de("prestacao_contas", "123", "9", C)["url"].endswith(
+        "mesa.html?cliente=123&instrumento=9")
+    # sem instrumento não inventa filtro — cairia numa mesa vazia
+    assert peca_de("prestacao_contas", "123", None, C)["url"].endswith("mesa.html?cliente=123")
     # a parcela não pede ofício, pede CONFERIR se o dinheiro entrou — e o
     # documento é o extrato da conta (os outros elos da cadeia estão vazios)
     assert peca_de("parcela_prevista", "123", "9", C)["tipo"] == "conferencia-parcela"
