@@ -175,7 +175,7 @@ def recibos(detalhes: list[str | None]) -> dict[str, dict]:
     return {w: {"status": s, "erro": e, "em": r.isoformat()} for w, s, e, r in linhas}
 
 
-def falhas_recentes(horas: int = 48) -> list[dict]:
+def falhas_recentes(horas: int = 48, silencioso: bool = True) -> list[dict]:
     """Entregas que a Meta ACEITOU e depois recusou.
 
     `enviar` devolver um wamid só prova que a API aceitou — a recusa vem
@@ -185,6 +185,10 @@ def falhas_recentes(horas: int = 48) -> list[dict]:
 
     A ironia é que o canal que avisaria é o mesmo que está quebrado — por isso
     isto também vai para o log da cadeia e para a tela de notificações.
+
+    `silencioso=True` (tela) engole erro de banco: recibo é diagnóstico, não pode
+    derrubar a página. A CADEIA passa False — ali lista vazia significaria "nada
+    falhou", que é exatamente a mentira que este módulo existe para não contar.
     """
     try:
         with conectar() as con:
@@ -194,6 +198,8 @@ def falhas_recentes(horas: int = 48) -> list[dict]:
                 "   AND recebido_em > now() - make_interval(hours => %s)"
                 " ORDER BY recebido_em DESC", (horas,)).fetchall()
     except Exception:  # noqa: BLE001
+        if not silencioso:
+            raise
         return []
     return [{"numero": n, "status": s, "erro": e, "em": q.isoformat()} for n, s, e, q in linhas]
 

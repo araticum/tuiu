@@ -138,7 +138,7 @@ def _conferir_entregas(fh) -> None:
     sys.path.insert(0, str(RAIZ / "backend"))
     try:
         from app.wpp_webhook import falhas_recentes
-        falhas = falhas_recentes(26)
+        falhas = falhas_recentes(26, silencioso=False)
     except Exception as e:  # noqa: BLE001
         _log(fh, f"! nao consegui conferir os recibos de entrega: {type(e).__name__}")
         return
