@@ -33,11 +33,18 @@ FORA: é backlog permanente, não notícia do dia. Incluí-lo fez "8 mudanças �
 pedem sua ação", com o numerador passando o denominador e destruindo a frase que
 dá sentido à mensagem. Ele vive na mesa, que a mensagem linka.
 
-## Silêncio é resposta
+## Dia quieto também é notícia
 
-Sem item acionável, **nada é enviado**. Dia quieto não gasta a atenção de
-ninguém — e "não chegou nada" só é honesto porque a quebra da cadeia avisa por
-outro caminho (`ops/rodar_diario._avisar_falha`).
+A primeira versão não mandava nada quando não havia item acionável, apostando
+que a quebra da cadeia avisaria por outro caminho. Não serve: para quem espera
+a mensagem, **"nada chegou" tem três sentidos** — nada mudou, a fonte não
+atualizou, ou o pipe quebrou — e o silêncio não desempata nenhum deles. Foi
+exatamente assim que três dias de entrega recusada passaram despercebidos.
+
+Agora sai mensagem todo dia, e ela diz QUAL dos casos é. A diferença entre
+"o Transferegov atualizou e nada mudou" e "o Transferegov não atualizou" vem do
+`_verificacao.json` que a cadeia já escreve — misturar os dois seria vender
+tranquilidade sem ter medido nada.
 
 Uso:
     py -3 backend/app/resumo_diario.py            # monta e envia (respeita as travas)
@@ -63,6 +70,7 @@ TOPO = 3          # quantos cabem na mensagem; o resto vive na mesa
 # de um no corpo do outro produz mensagem trocada, nao erro
 TEMPLATE = "aviso_tuiu_resumo"
 LIMITE_ITEM = 160
+SEM_ITEM = "—"    # a Meta recusa parâmetro vazio; o travessão é o vazio honesto
 
 
 def _mesa_por_instrumento(cliente: str | None = None) -> dict[tuple[str, str], dict]:
@@ -83,6 +91,62 @@ def _bola_por_instrumento(con) -> dict[tuple[str, str], str]:
             for c, i, d in con.execute(
                 "SELECT DISTINCT ON (cnpj, instrumento) cnpj, instrumento, detalhes FROM marcos"
                 " WHERE instrumento IS NOT NULL ORDER BY cnpj, instrumento, (farol = 'ok')")}
+
+
+def frescor(dia: date | None = None) -> dict:
+    """O que `verificar.py` mediu sobre o snapshot de hoje.
+
+    Existe para o resumo não confundir **"nada mudou"** com **"nada chegou"**.
+    São fatos diferentes: o primeiro é tranquilidade medida, o segundo é
+    ignorância. Dizer "sem novidades" quando a fonte não atualizou seria a
+    mentira mais cara que este produto pode contar.
+    """
+    import json
+
+    arq = (Path(__file__).resolve().parents[2] / "data" / "recortes"
+           / (dia or date.today()).isoformat() / "_verificacao.json")
+    if not arq.exists():
+        return {"conferido": False, "fresco": None, "api": None}
+    try:
+        d = json.loads(arq.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"conferido": False, "fresco": None, "api": None}
+    return {"conferido": True, "fresco": bool(d.get("snapshot_fresco")),
+            "api": str(d.get("data_atualizacao_api") or "")[:10] or None}
+
+
+def estado_quieto(r: dict) -> tuple[str, str]:
+    """(o que houve, o que isso quer dizer) num dia sem item acionável."""
+    f = r.get("frescor") or {}
+    if not f.get("conferido"):
+        return ("Não deu para confirmar se o Transferegov atualizou hoje.",
+                "Sem conferência de frescor — trate o de hoje como não verificado.")
+    if not f.get("fresco"):
+        velho = f" O dado ainda é o de {f['api']}." if f.get("api") else ""
+        return (f"O Transferegov NÃO atualizou hoje.{velho}",
+                "Nada confirmado — o dado de hoje não é D-1 confiável.")
+    if not r["mudancas"]:
+        return ("O Transferegov atualizou: nenhuma mudança na carteira hoje.",
+                "Nada — dia sem movimento.")
+    return (f"{r['mudancas']} mudança(s) hoje, nenhuma exige sua ação.",
+            "Nada — nenhuma pendência nova para você.")
+
+
+def parametros_quieto(r: dict) -> list[str]:
+    cabeca, primeiro = estado_quieto(r)
+    cauda = (f"{r['com_orgao']} mudança(s) estão com o órgão — nada a fazer."
+             if r["com_orgao"] else
+             f"Dia quieto. A mesa segue com {r['mesa_aberta']} item(ns) em aberto.")
+    return [cabeca, primeiro, SEM_ITEM, SEM_ITEM, cauda]
+
+
+def texto_quieto(r: dict, console_url: str) -> str:
+    cabeca, primeiro = estado_quieto(r)
+    linhas = [f"📋 Tuiú · resumo de {r['dia'][8:10]}/{r['dia'][5:7]}", "", cabeca, "", primeiro]
+    if r["com_orgao"]:
+        linhas.append(f"({r['com_orgao']} mudança(s) estão com o órgão — nada a fazer)")
+    linhas += ["", f"Mesa completa, já priorizada: {console_url}/mesa.html"]
+    return "\n".join(linhas)
 
 
 def montar(dia: date | None = None) -> dict:
@@ -190,13 +254,15 @@ def enviar(dia: date | None = None, previa: bool = False) -> dict:
 
     r = montar(dia)
     r["enviado"] = False
-    if not r["acionaveis"]:
-        # silêncio é a resposta certa: dia sem ação não gasta a atenção de
-        # ninguém, e a quebra da cadeia avisa por outro caminho
-        r["motivo"] = "nada exige ação hoje — nada enviado"
-        return r
-    r["texto"] = texto(r, CONSOLE_URL)
-    r["parametros"] = parametros(r, CONSOLE_URL)
+    r["frescor"] = frescor(dia)
+    # dia sem ação TAMBÉM sai: silêncio não distingue "nada mudou" de "quebrou"
+    r["quieto"] = not r["acionaveis"]
+    if r["quieto"]:
+        r["texto"] = texto_quieto(r, CONSOLE_URL)
+        r["parametros"] = parametros_quieto(r)
+    else:
+        r["texto"] = texto(r, CONSOLE_URL)
+        r["parametros"] = parametros(r, CONSOLE_URL)
     if previa:
         r["motivo"] = "prévia"
         return r

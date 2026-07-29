@@ -43,14 +43,37 @@ def _r(acionaveis, mudancas=8, com_orgao=2, sem_marco=0):
             "com_orgao": com_orgao, "sem_marco": sem_marco, "mesa_aberta": 396}
 
 
-# ------------------------------------------------------------- o silêncio
-def test_dia_sem_acao_nao_envia_nada(monkeypatch):
-    """A regra que mais protege o canal."""
+# -------------------------------------------------- o dia quieto também fala
+def test_dia_sem_acao_ainda_manda_mensagem(monkeypatch):
+    """Silêncio não distingue "nada mudou" de "o pipe quebrou".
+
+    Era a regra antiga (nada acionável = nada enviado) e ela custou caro: três
+    dias de entrega recusada pela Meta passaram como se fossem dias quietos.
+    Quem espera a mensagem não tem como saber a diferença — então ela sai.
+    """
     monkeypatch.setattr(rd, "montar", lambda dia=None: _r([], mudancas=12, com_orgao=12))
-    r = rd.enviar()
-    assert r["enviado"] is False
-    assert "nada exige ação" in r["motivo"]
-    assert "texto" not in r, "não monta mensagem que não vai sair"
+    monkeypatch.setattr(rd, "frescor", lambda dia=None: {"conferido": True, "fresco": True})
+    r = rd.enviar(previa=True)
+    assert r["quieto"] is True
+    assert r["texto"] and len(r["parametros"]) == 5
+    assert all(p.strip() for p in r["parametros"]), "Meta recusa parâmetro vazio"
+
+
+@pytest.mark.parametrize("f,esperado", [
+    ({"conferido": False}, "não deu para confirmar"),
+    ({"conferido": True, "fresco": False, "api": "2026-07-24"}, "não atualizou"),
+    ({"conferido": True, "fresco": True}, "atualizou"),
+])
+def test_dia_quieto_diz_QUAL_silencio_e(monkeypatch, f, esperado):
+    """"Nada mudou" e "a fonte não atualizou" são fatos diferentes.
+
+    Tranquilidade medida vs. ignorância. Vender a segunda como a primeira é a
+    mentira mais cara que este produto pode contar.
+    """
+    monkeypatch.setattr(rd, "montar", lambda dia=None: _r([], mudancas=0, com_orgao=0))
+    monkeypatch.setattr(rd, "frescor", lambda dia=None: f)
+    cabeca = rd.enviar(previa=True)["parametros"][0]
+    assert esperado in cabeca.lower(), cabeca
 
 
 def test_dia_com_acao_monta_a_mensagem(monkeypatch):
