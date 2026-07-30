@@ -60,6 +60,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.db import conectar  # noqa: E402
+from app.texto_br import arejar, encurtar, prazo_texto, qtd, verbo  # noqa: E402
 
 # Faixas da mesa que exigem ação do operador. 5 (vigência encerrando) e 6
 # (acompanhar) ficam de fora de propósito: são vigilância, não tarefa, e entrar
@@ -71,6 +72,7 @@ TOPO = 3          # quantos cabem na mensagem; o resto vive na mesa
 TEMPLATE = "aviso_tuiu_resumo"
 LIMITE_ITEM = 160
 SEM_ITEM = "—"    # a Meta recusa parâmetro vazio; o travessão é o vazio honesto
+LIMITE_CLIENTE = 40   # razão social é longa; corta na palavra, nunca na sílaba
 
 
 def _mesa_por_instrumento(cliente: str | None = None) -> dict[tuple[str, str], dict]:
@@ -128,15 +130,16 @@ def estado_quieto(r: dict) -> tuple[str, str]:
     if not r["mudancas"]:
         return ("O Transferegov atualizou: nenhuma mudança na carteira hoje.",
                 "Nada — dia sem movimento.")
-    return (f"{r['mudancas']} mudança(s) hoje, nenhuma exige sua ação.",
+    return (f"{qtd(r['mudancas'], 'mudança', 'mudanças')} hoje, nenhuma exige sua ação.",
             "Nada — nenhuma pendência nova para você.")
 
 
 def parametros_quieto(r: dict) -> list[str]:
     cabeca, primeiro = estado_quieto(r)
-    cauda = (f"{r['com_orgao']} mudança(s) estão com o órgão — nada a fazer."
+    cauda = (f"{qtd(r['com_orgao'], 'mudança', 'mudanças')} "
+             f"{verbo(r['com_orgao'], 'está', 'estão')} com o órgão — nada a fazer."
              if r["com_orgao"] else
-             f"Dia quieto. A mesa segue com {r['mesa_aberta']} item(ns) em aberto.")
+             f"Dia quieto. A mesa segue com {qtd(r['mesa_aberta'], 'item', 'itens')} em aberto.")
     return [cabeca, primeiro, SEM_ITEM, SEM_ITEM, cauda]
 
 
@@ -195,10 +198,13 @@ def montar(dia: date | None = None) -> dict:
 
 
 def _prazo(item: dict) -> str:
+    """`(em 9 dias)`, `(vencido há 3 dias)`, `(vence hoje)` — por extenso.
+
+    Saía `(em 9d)`. Cabia inteiro; foi abreviado por hábito de terminal, e `9d`
+    não é português."""
     d = item.get("dias")
-    if d is None:
-        return ""
-    return f" (vencido há {-d}d)" if d < 0 else (" (hoje)" if d == 0 else f" (em {d}d)")
+    p = prazo_texto(d)
+    return f" ({p})" if p else ""
 
 
 def link_item(item: dict, console_url: str) -> str:
@@ -231,13 +237,11 @@ def linha_item(item: dict, link: str | None = None) -> str:
     # a PEÇA no fim da linha é o ponto do pedido do dono (28/07): a triagem não
     # diz só o que fazer, entrega o rascunho já montado
     peca = f" · {item['peca']['titulo'].lower()} pronta" if item.get("peca") else ""
-    texto = (f"{item['cliente'][:40]} · {item['rotulo']}{_prazo(item)} — {item['passo']}{peca}")
+    cliente = encurtar(arejar(item["cliente"]), LIMITE_CLIENTE)
+    texto = f"{cliente} · {item['rotulo']}{_prazo(item)} — {item['passo']}{peca}"
     if not link:
-        return texto[:LIMITE_ITEM - 1] + "…" if len(texto) > LIMITE_ITEM else texto
-    cabe = min(LIMITE_ITEM, LIMITE_PARAMETRO - len(link) - 4)
-    if len(texto) > cabe:
-        texto = texto[:max(cabe - 1, 1)].rstrip() + "…"
-    return f"{texto} → {link}"
+        return encurtar(texto, LIMITE_ITEM)
+    return f"{encurtar(texto, min(LIMITE_ITEM, LIMITE_PARAMETRO - len(link) - 4))} → {link}"
 
 
 def parametros(r: dict, console_url: str) -> list[str]:
@@ -248,11 +252,13 @@ def parametros(r: dict, console_url: str) -> list[str]:
     parâmetro vazio, e inventar item para preencher seria pior.
     """
     itens = r["acionaveis"][:TOPO]
-    cabeca = (f"{r['mudancas']} mudança(s) na carteira hoje. "
-              f"{len(r['acionaveis'])} pede(m) sua ação.")
+    n = len(r["acionaveis"])
+    cabeca = (f"{qtd(r['mudancas'], 'mudança', 'mudanças')} na carteira hoje. "
+              f"{n} {verbo(n, 'pede', 'pedem')} sua ação.")
     resto = len(r["acionaveis"]) - len(itens)
     cauda = (f"E mais {resto} na mesa." if resto > 0 else
-             (f"{r['com_orgao']} mudança(s) estão com o órgão — nada a fazer."
+             (f"{qtd(r['com_orgao'], 'mudança', 'mudanças')} "
+              f"{verbo(r['com_orgao'], 'está', 'estão')} com o órgão — nada a fazer."
               if r["com_orgao"] else "Só isso hoje."))
     return [cabeca,
             *[linha_item(i, link_item(i, console_url)) for i in itens],
@@ -263,7 +269,8 @@ def parametros(r: dict, console_url: str) -> list[str]:
 def texto(r: dict, console_url: str) -> str:
     """Versão legível para outbox/log — aqui a quebra de linha é permitida."""
     linhas = [f"📋 Tuiú · resumo de {r['dia'][8:10]}/{r['dia'][5:7]}",
-              "", f"{r['mudancas']} mudança(s) hoje · {len(r['acionaveis'])} pede(m) sua ação", ""]
+              "", f"{qtd(r['mudancas'], 'mudança', 'mudanças')} hoje · {len(r['acionaveis'])} "
+              f"{verbo(len(r['acionaveis']), 'pede', 'pedem')} sua ação", ""]
     for n, i in enumerate(r["acionaveis"][:TOPO], 1):
         linhas.append(f"{n}. {linha_item(i)}")
         rotulo = i["peca"]["titulo"] if i.get("peca") else "Mesa desta transferência"

@@ -22,6 +22,7 @@ from app.carteira import ROTULOS, snapshot_mais_recente
 # num ofício é desleixo que o leitor atribui ao remetente
 from app.cliente_ficha import _humaniza
 from app.db import conectar
+from app.texto_br import qtd
 
 _MESES = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
           "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -133,10 +134,11 @@ def montar_cobranca(cli: dict, doc: str, id_proposta, det: dict, prop: dict, hoj
         f"1. A {cli['nome']}, inscrita no CNPJ sob o nº {_cnpj_fmt(doc)}, apresentou a "
         f"Proposta nº {id_proposta}, cujo objeto é \"{objeto}\", encaminhada para análise "
         f"em {envio}.\n\n"
-        f"2. Decorridos {dias} dias do envio, a proposta permanece sem decisão. Nos termos "
+        f"2. Decorridos {qtd(dias, 'dia', 'dias')} do envio, a proposta permanece sem "
+        f"decisão. Nos termos "
         f"do art. 97, inciso I, e §1º, da Portaria Conjunta nº 33/2023, o prazo para análise "
         f"pelo concedente, no processamento informatizado, é de {limite} (sessenta) dias — "
-        f"encontrando-se, portanto, **vencido há {venc} dias**."
+        f"encontrando-se, portanto, **vencido há {qtd(venc, 'dia', 'dias')}**."
         f"{nota_parecer}\n\n"
         f"{'4' if up else '3'}. Diante do exposto, requer-se a conclusão da análise da "
         "proposta no menor prazo possível, ou, subsidiariamente, a informação motivada sobre "

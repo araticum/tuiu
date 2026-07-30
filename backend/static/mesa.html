@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Mesa de trabalho</title>
 <style>
@@ -152,7 +153,7 @@ function render(){
   const itens = (DADOS.itens||[]).filter(i=>filtro==null || i.faixa===filtro);
   const din = DADOS.dinheiro||{};
   document.getElementById("carimbo").textContent =
-    `${DADOS.total} pendência(s) · ${DADOS.clientes} cliente(s)`
+    `${qtd(DADOS.total, "pendência", "pendências")} · ${qtd(DADOS.clientes, "cliente", "clientes")}`
     + (din.a_devolver>0?` · ${brl(din.a_devolver)} a devolver`:"") + ` · ${dbr(DADOS.gerado_em)}`;
   res.innerHTML = (DADOS.resumo||[]).map(r=>`
     <div class="chip ${filtro!=null&&filtro!==r.faixa?'off':''}" onclick="setFiltro('${esc(r.faixa)}')">

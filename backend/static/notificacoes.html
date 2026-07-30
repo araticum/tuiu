@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Notificações</title>
 <style>
@@ -115,7 +116,7 @@ async function carregar() {
     if (c.transporte)
       nota += `<div class="alcance">Transporte: <b>${c.transporte}</b>`
             + (TRANSPORTE[c.transporte] ? ` — ${TRANSPORTE[c.transporte]}` : "")
-            + (c.destinos != null ? ` · <b>${c.destinos}</b> destino(s) na equipe` : "")
+            + (c.destinos != null ? ` · <b>${c.destinos}</b> ${verbo(c.destinos, "destino", "destinos")} na equipe` : "")
             + `</div>`;
     if (impedido) nota += `<div class="bloq">Não configurado — falta ${c.falta}. Ligar aqui não faz efeito.</div>`;
     if (id === "seriema" && c.transporte === "cloud_api" && c.destinos === 0)
@@ -136,7 +137,7 @@ async function carregar() {
   }
 
   html += `<div class="sec">Situação</div><div class="card">
-      <b>${d.eventos_sem_envio_externo}</b> evento(s) registrados sem envio externo.
+      <b>${d.eventos_sem_envio_externo}</b> ${verbo(d.eventos_sem_envio_externo, "evento registrado", "eventos registrados")} sem envio externo.
       ${geral ? "" : "Com a trava geral desligada, é o esperado."}
     </div>`;
 

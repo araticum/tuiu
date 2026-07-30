@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Fila do operador</title>
 <style>
@@ -93,7 +94,7 @@ function render(){
     const grupos={};
     its.forEach(i=>{ (grupos[i.cliente_nome]=grupos[i.cliente_nome]||{doc:i.cliente,itens:[]}).itens.push(i); });
     el.innerHTML = Object.entries(grupos).map(([nome,g])=>
-      `<div class="grp"><a href="/cliente.html?doc=${g.doc}">${nome}</a><span>${g.itens.length} item(ns)</span></div>`
+      `<div class="grp"><a href="/cliente.html?doc=${g.doc}">${nome}</a><span>${qtd(g.itens.length, "item", "itens")}</span></div>`
       + g.itens.map(itemHtml).join("")).join("");
   } else {
     el.innerHTML = its.map(itemHtml).join("");

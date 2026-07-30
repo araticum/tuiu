@@ -38,7 +38,7 @@ PUBLICO = {"/login.html", "/api/login", "/api/sessao", "/api/wpp/webhook"}
 # Chrome de UI compartilhado (CSS/JS/fontes) NÃO tem dado sensível — o dado vive
 # atrás de /api. Servem sem sessão para qualquer papel; senão cliente/anônimo
 # tomam 303/403 e o tema/nav não carregam. As PÁGINAS .html seguem fechadas.
-ASSETS_PUBLICOS = {"/nav.js", "/tema.js", "/tuiu-cartorio.css", "/tuiu-fontes.css"}
+ASSETS_PUBLICOS = {"/nav.js", "/tema.js", "/br.js", "/tuiu-cartorio.css", "/tuiu-fontes.css"}
 
 # Permissões do papel `cliente`: (MÉTODO, prefixo). O método faz parte da
 # permissão — sem ele, "pode ver /api/cliente/" virava "pode escrever em

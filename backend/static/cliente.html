@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Ficha do cliente</title>
 <style>
@@ -151,7 +152,7 @@ function carregar(){
       }
       return `<div style="padding:6px 0;border-bottom:1px solid #1e2a3a">
         <div>${(x.orgao||"").replace(/^MINIST[ÉE]RIO (DA |DO |DE |DAS |DOS )?/i,"")}
-          <small style="color:#8ba3bf">· ${x.convenios_do_cliente} convênio(s)</small></div>
+          <small style="color:#8ba3bf">· ${qtd(x.convenios_do_cliente, "convênio", "convênios")}</small></div>
         ${funil}
         ${lat}
         <div style="font-size:12.5px">${desf}</div>

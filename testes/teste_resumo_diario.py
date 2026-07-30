@@ -2,9 +2,10 @@
 
 O que estes testes protegem, na ordem em que doem:
 
-1. **Silêncio em dia sem ação.** Se nada exige o operador, nada é enviado.
-   Mensagem diária de "não há nada" treina a pessoa a ignorar o canal, e aí o
-   dia que importa passa batido junto.
+1. **Dia sem ação também fala, dizendo QUAL silêncio é.** A regra antiga era o
+   contrário (nada acionável = nada enviado) e custou três dias de entrega
+   recusada pela Meta passando por dias quietos. "Nada mudou", "a fonte não
+   atualizou" e "o pipe quebrou" são fatos diferentes; o silêncio não desempata.
 2. **O que está com o ÓRGÃO não vira tarefa.** É a distinção que matou o alarme
    falso de 77% em 19/07; repeti-la aqui é o coração da triagem.
 3. **O denominador não pode mentir.** "De N mudanças, K pedem você" só vale se N
@@ -86,7 +87,10 @@ def test_dia_com_acao_monta_a_mensagem(monkeypatch):
 def test_cabeca_traz_o_numerador_e_o_denominador():
     """É a frase do Danilo: 'de 200 mudanças, 5 precisam de você'."""
     p = rd.parametros(_r([_item(), _item(instrumento="931212")]), CONSOLE)
-    assert "8 mudança(s)" in p[0] and "2 pede(m) sua ação" in p[0]
+    # norma culta, não plural entre parênteses: o número é conhecido aqui, então
+    # a concordância é decidível e "(s)/(m)" só empurra o trabalho para o leitor
+    assert "8 mudanças" in p[0] and "2 pedem sua ação" in p[0]
+    assert "(s)" not in p[0] and "(m)" not in p[0]
 
 
 def test_sobra_vira_travessao_nao_item_inventado():
@@ -101,12 +105,36 @@ def test_alem_do_topo_manda_para_a_mesa():
 
 def test_quando_nada_sobra_diz_o_que_esta_com_o_orgao():
     p = rd.parametros(_r([_item()], com_orgao=5), CONSOLE)
-    assert "5 mudança(s) estão com o órgão" in p[4]
+    assert "5 mudanças estão com o órgão" in p[4]
 
 
-@pytest.mark.parametrize("dias, esperado", [(-30, "vencido há 30d"), (0, "hoje"), (18, "em 18d")])
+@pytest.mark.parametrize("dias, esperado", [
+    (-30, "vencido há 30 dias"), (-1, "vencido há 1 dia"),
+    (0, "vence hoje"), (1, "em 1 dia"), (18, "em 18 dias"),
+])
 def test_prazo_legivel(dias, esperado):
+    """Por extenso. `9d` não é português — e cabia inteiro."""
     assert esperado in rd.linha_item(_item(dias=dias))
+
+
+def test_singular_nao_sai_com_verbo_no_plural():
+    """Foi o que o WhatsApp entregou em 29/07: "1 mudança(s) estão com o órgão"."""
+    p = rd.parametros(_r([_item()], com_orgao=1), CONSOLE)
+    assert "1 mudança está com o órgão" in p[4]
+
+
+def test_nenhum_parametro_traz_plural_hedgeado():
+    """A varredura que faltava: o erro é silencioso e nenhum teste reclamava."""
+    for r in (_r([_item()], mudancas=1, com_orgao=1), _r([_item(), _item("2")], com_orgao=9)):
+        for campo in rd.parametros(r, CONSOLE):
+            assert "(s)" not in campo and "(m)" not in campo and "(ns)" not in campo, campo
+
+
+def test_cliente_longo_nao_e_cortado_no_meio_da_palavra():
+    """`[:40]` produzia "PROJETOS,PESQUIS" — sílaba cortada e vírgula grudada."""
+    linha = rd.linha_item(_item(cliente="FUNDACAO COORDENACAO DE PROJETOS,PESQUISAS E ESTUDOS"))
+    assert "PESQUIS " not in linha and "PROJETOS,PESQUISAS" not in linha
+    assert "PROJETOS, " in linha or linha.split(" ·")[0].endswith("…")
 
 
 def test_item_cabe_em_uma_linha_e_no_limite():
@@ -140,4 +168,4 @@ def test_ordena_por_urgencia_e_depois_por_prazo():
     itens = [_item(rank=8, dias=5), _item(rank=0, dias=90), _item(rank=0, dias=2)]
     r = _r(sorted(itens, key=lambda i: (i["rank"], i["dias"])))
     p = rd.parametros(r, CONSOLE)
-    assert "em 2d" in p[1] and "em 90d" in p[2] and "em 5d" in p[3]
+    assert "em 2 dias" in p[1] and "em 90 dias" in p[2] and "em 5 dias" in p[3]
