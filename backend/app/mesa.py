@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.carteira import nome_exibicao
 from app.db import conectar
 from app.notificador import CONSOLE_URL
 from app.dossie import percentuais as dossie_percentuais
@@ -117,7 +118,10 @@ def montar(cliente: str | None = None) -> dict:
             exig = (ultimo.get("parecer") if isinstance(ultimo, dict) else None) or ""
             itens.append({
                 "chave": chave, "status": status.get(chave, "aberto"),
-                "cnpj": cnpj, "cliente": clientes.get(cnpj, cnpj),
+                # nome_exibicao, não `clientes.get` cru: é o furo que o docstring
+                # dele adverte — quem resolve o nome por fora perde o rótulo à mão
+                # e a correção ortográfica, e a mesa mostrava CAIXA ALTA sem acento
+                "cnpj": cnpj, "cliente": nome_exibicao(cnpj, clientes.get(cnpj), clientes),
                 "instrumento": instr, "situacao": d.get("situacao") or "",
                 "rank": rank, "faixa": faixa, "farol": farol, "bola": bola,
                 "responder_ate": limite.isoformat() if limite else None, "dias": dias,

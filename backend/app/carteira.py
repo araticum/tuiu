@@ -83,9 +83,20 @@ def nome_exibicao(cnpj: str, fallback: str | None = None, nomes: dict | None = N
     Existe em um lugar só porque o evento GRAVA o nome no momento do diff: quem
     resolver diferente na hora de exibir manda CNPJ cru para o WhatsApp de
     alguém — foi o que aconteceu com os 23 eventos de julho/2026.
+
+    É também onde a razão social é CONSERTADA para leitura (decisão do dono,
+    30/07: não se valida erro de plataforma, mesmo oficial). A correção vive aqui
+    e só aqui, na saída: `clientes.nome` continua byte a byte igual ao que o
+    Transferegov mandou, para a conferência contra a origem seguir trivial —
+    `ferramentas/conferir_razao_social.py`.
+
+    `ROTULOS` passa por fora: é rótulo escrito à mão, já correto, e reprocessar
+    "Águas Lindas de Goiás/GO — prefeitura (ente)" só faria estrago.
     """
+    from app.razao_social import exibir
+
     nomes = nomes_carteira() if nomes is None else nomes
-    return ROTULOS.get(cnpj) or nomes.get(cnpj) or fallback or cnpj
+    return ROTULOS.get(cnpj) or exibir(nomes.get(cnpj) or fallback) or cnpj
 
 
 def _data_br(s: str | None) -> date | None:
