@@ -23,6 +23,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAIZ / "backend"))
+from app.texto_br import qtd, verbo  # noqa: E402
 LOGS = RAIZ / "ops" / "logs"
 CACHE_DETRU = RAIZ / "data" / "detru" / "cache"
 DOWNLOADS = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov"
@@ -140,15 +142,16 @@ def _conferir_entregas(fh) -> None:
         from app.wpp_webhook import falhas_recentes
         falhas = falhas_recentes(26, silencioso=False)
     except Exception as e:  # noqa: BLE001
-        _log(fh, f"! nao consegui conferir os recibos de entrega: {type(e).__name__}")
+        _log(fh, f"! não consegui conferir os recibos de entrega: {type(e).__name__}")
         return
     if not falhas:
         return
     for f in falhas:
         _log(fh, f"!! ENTREGA RECUSADA para {f['numero']}: {f['erro']} "
                  f"(a API aceitou, a Meta recusou depois)")
-    _log(fh, f"!! {len(falhas)} entrega(s) NAO chegaram — 'enviado' no log acima "
-             f"significa apenas que a API aceitou")
+    n = len(falhas)
+    _log(fh, f"!! {qtd(n, 'entrega', 'entregas')} NÃO {verbo(n, 'chegou', 'chegaram')} — "
+             f"'enviado' no log acima significa apenas que a API aceitou")
 
 
 def _conferir_frescor(fh) -> None:
@@ -168,14 +171,14 @@ def _conferir_frescor(fh) -> None:
 
     arq = RAIZ / "data" / "recortes" / date.today().isoformat() / "_verificacao.json"
     if not arq.exists():
-        _log(fh, "! conferencia sem _verificacao.json — frescor NAO conferido hoje")
+        _log(fh, "! conferência sem _verificacao.json — frescor NÃO conferido hoje")
         return
     d = json.loads(arq.read_text(encoding="utf-8"))
     fresco, resumo = d.get("snapshot_fresco"), d.get("resumo") or {}
     divergem = int(resumo.get("divergem") or 0)
     if fresco and not divergem:
         _log(fh, f"OK dado fresco ({d.get('data_atualizacao_api', '')[:10]}), "
-                 f"{resumo.get('conferem')} conferencias batem")
+                 f"{qtd(int(resumo.get('conferem') or 0), 'conferência bate', 'conferências batem')}")
         return
 
     motivo = []
@@ -183,7 +186,8 @@ def _conferir_frescor(fh) -> None:
         motivo.append(f"snapshot NAO fresco (API={str(d.get('data_atualizacao_api'))[:10]}, "
                       f"recorte={d.get('snapshot')})")
     if divergem:
-        motivo.append(f"{divergem} conferencia(s) DIVERGEM da g2 ao vivo")
+        motivo.append(f"{qtd(divergem, 'conferência', 'conferências')} "
+                      f"{verbo(divergem, 'DIVERGE', 'DIVERGEM')} da g2 ao vivo")
     _log(fh, "! " + " · ".join(motivo))
     _avisar(f"⚠️ Tuiú — {' · '.join(motivo)}.\n"
             f"A cadeia seguiu, mas o dado de hoje NÃO é D-1 confiável.",

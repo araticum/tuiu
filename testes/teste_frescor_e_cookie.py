@@ -116,7 +116,15 @@ def test_divergencia_com_a_g2_avisa(diario):
     rd, enviados, base = diario
     _verificacao(base, fresco=True, divergem=3)
     rd._conferir_frescor(_Log())
-    assert len(enviados) == 1 and "3 conferencia(s) DIVERGEM" in enviados[0][0]
+    # norma culta no aviso: o número é conhecido, então concorda de verdade
+    assert len(enviados) == 1 and "3 conferências DIVERGEM" in enviados[0][0]
+
+
+def test_divergencia_unica_concorda_no_singular(diario):
+    rd, enviados, base = diario
+    _verificacao(base, fresco=True, divergem=1)
+    rd._conferir_frescor(_Log())
+    assert "1 conferência DIVERGE" in enviados[0][0]
 
 
 def test_ausencia_do_arquivo_aparece_no_log(diario):
@@ -124,4 +132,4 @@ def test_ausencia_do_arquivo_aparece_no_log(diario):
     rd, enviados, base = diario
     log = _Log()
     rd._conferir_frescor(log)
-    assert any("NAO conferido" in l for l in log.linhas)
+    assert any("NÃO conferido" in l for l in log.linhas)

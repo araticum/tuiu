@@ -316,8 +316,10 @@ def enviar(dia: date | None = None, previa: bool = False) -> dict:
 def main():
     previa = "--previa" in sys.argv
     r = enviar(previa=previa)
-    print(f"{r['dia']}: {r['mudancas']} mudança(s), {len(r['acionaveis'])} acionável(is), "
-          f"{r['com_orgao']} com o órgão, mesa com {r['mesa_aberta']}")
+    n = len(r["acionaveis"])
+    print(f"{r['dia']}: {qtd(r['mudancas'], 'mudança', 'mudanças')}, "
+          f"{qtd(n, 'acionável', 'acionáveis')}, {r['com_orgao']} com o órgão, "
+          f"mesa com {qtd(r['mesa_aberta'], 'item', 'itens')}")
     if r.get("texto"):
         print("-" * 60); print(r["texto"]); print("-" * 60)
     print("enviado" if r["enviado"] else f"não enviado: {r.get('motivo')}")
