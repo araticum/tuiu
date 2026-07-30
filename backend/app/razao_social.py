@@ -83,7 +83,8 @@ LEXICO = {
     "BENEFICENCIA": "Beneficência", "CIENCIA": "Ciência",
     "EXCELENCIA": "Excelência", "INFANCIA": "Infância",
     # -ário / -ório / -ico / -ável
-    "CIENTIFICO": "Científico", "COMUNITARIA": "Comunitária",
+    "CIENTIFICO": "Científico", "CLINICAS": "Clínicas",
+    "COMUNITARIA": "Comunitária",
     "ESTRATEGICO": "Estratégico", "EVANGELICA": "Evangélica",
     "LITERARIA": "Literária", "MISERICORDIA": "Misericórdia",
     "POLITICAS": "Políticas", "PUBLICA": "Pública", "PUBLICAS": "Públicas",
@@ -113,12 +114,18 @@ LEXICO = {
 # apenas marcam a palavra como suspeita em `pendencias()`, para o léxico crescer
 # por decisão e não por adivinhação.
 SUFIXO_SUSPEITO = re.compile(
-    # -ão/-ões e -ção/-ções: `MARANHAO` não casava com `CAO$` e passava calado
+    # -ão/-ões e -ção/-ções: `MARANHAO` não casava com `CAO$` e passava calado.
+    # `OGIA` saiu: tecnologia, biologia e psicologia não levam acento, e ele
+    # sozinho respondia por um terço dos falsos positivos da carteira.
     r"(AO|OES|AES|ENCIA|ANCIA|ARIO|ARIA|ORIO|ORIA|AVEL|IVEL|ICO|ICA|ICOS|ICAS"
-    r"|OGIA|ONIO|ESIA|AUDE|ANCER|EIA)$")
+    r"|ONIO|ESIA|AUDE|ANCER)$")
 # `ç` some no dado da plataforma como `c`: `CRIANCA`, `ESPERANCA`, `AVANCADOS`.
 # Não casa com sufixo nenhum, então precisa de sinal próprio.
-CEDILHA_PROVAVEL = re.compile(r"N[CÇ][AOU]|[AEIOU]C[AOU](?=[MRS]?$)")
+#
+# Só `nç`: a primeira versão também olhava vogal+c+vogal no fim da palavra e
+# acusava PERNAMBUCO, CARIOCA e ECOS — sinal que grita mais do que acerta faz o
+# dono ignorar a lista, e aí ela não serve para nada.
+CEDILHA_PROVAVEL = re.compile(r"N[CÇ][AOU]")
 
 
 def _sem_acento(palavra: str) -> str:

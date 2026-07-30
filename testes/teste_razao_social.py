@@ -94,9 +94,21 @@ def test_truncamento_da_origem_passa_intacto():
 
 # ------------------------------------------------- a dívida visível
 def test_pendencias_marca_suspeita_de_acento():
-    p = {x["palavra"]: x["suspeita"] for x in pendencias("HOSPITAL DE CLINICAS DE LONDRINA")}
-    assert p["CLINICAS"] is True, "-icas quase sempre leva acento"
+    p = {x["palavra"]: x["suspeita"] for x in pendencias("CENTRO DE MEMORIA DE LONDRINA")}
+    assert p["MEMORIA"] is True, "-oria quase sempre leva acento"
     assert p["LONDRINA"] is False, "topônimo sem acento não é suspeita"
+
+
+@pytest.mark.parametrize("palavra", ["TECNOLOGIA", "PERNAMBUCO", "CARIOCA", "ECOS"])
+def test_heuristica_nao_grita_no_que_esta_certo(palavra):
+    """Sinal que grita mais do que acerta faz o dono ignorar a lista.
+
+    A primeira versão acusava estas quatro: `OGIA$` (tecnologia, biologia e
+    psicologia não levam acento) e vogal+c+vogal no fim (Pernambuco, Carioca,
+    Ecos) respondiam por 7 dos 10 alertas da carteira real.
+    """
+    achado = [x for x in pendencias(f"INSTITUTO {palavra}") if x["palavra"] == palavra]
+    assert achado and achado[0]["suspeita"] is False
 
 
 def test_pendencias_pega_ao_e_cedilha():
