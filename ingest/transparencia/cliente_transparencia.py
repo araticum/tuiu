@@ -124,6 +124,22 @@ def _get(path: str, params: dict, chave: str, tentativas: int = 4):
                 time.sleep(pausa)
                 continue
             return None, f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}"
+        except (TimeoutError, urllib.error.URLError, ConnectionError) as e:
+            # Rede instável NÃO é resposta da API, e por isso não pode escapar:
+            # `TimeoutError` não é `HTTPError`, então passava direto pelo except
+            # acima, subia pelo processo e matava a cadeia diária inteira. Foi o
+            # que derrubou 31/07, 01/08 e 02/08 — três dias sem recálculo de
+            # prazo por um pico de latência da CGU.
+            #
+            # HTTPError é subclasse de URLError: a ordem dos `except` importa e
+            # este tem que vir DEPOIS, senão engole erro de aplicação como se
+            # fosse rede.
+            if n < tentativas - 1:
+                pausa = min(60.0, 5.0 * 2 ** n)
+                print(f"  [rede] {type(e).__name__} — repetindo em {pausa:.0f}s", flush=True)
+                time.sleep(pausa)
+                continue
+            return None, f"rede indisponível após {tentativas} tentativas: {type(e).__name__}"
         # Armadilha 2: erro pode vir com 200 e corpo dict
         if not isinstance(corpo, list):
             return None, f"corpo nao-lista (erro disfarcado): {str(corpo)[:200]}"

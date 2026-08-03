@@ -56,9 +56,22 @@ def _log(fh, msg: str):
     fh.flush()
 
 
-def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
-    """`essencial=False` para elos INTERNOS (prospecção): eles não servem cliente,
-    então não podem interromper a cadeia que vigia prazo nem disparar alarme."""
+def _passo(fh, nome: str, cmd: list[str], essencial: bool = True,
+           avisar: bool | None = None) -> None:
+    """`essencial=False` não interrompe a cadeia. `avisar` decide se a equipe
+    ouve; por padrão acompanha `essencial`.
+
+    Os dois eram um só, e a fusão custou caro. Elo INTERNO (prospecção) não
+    serve cliente: não para a cadeia nem faz barulho. Mas há elo que é
+    ENRIQUECIMENTO de terceiro — a regularidade na CGU — que não pode parar a
+    vigília de prazo e mesmo assim precisa ser sabido: sem ele o impedimento do
+    convenente envelhece calado.
+
+    Com um botão só, esse elo estava marcado essencial e derrubou a cadeia em
+    31/07, 01/08 e 02/08 por um pico de latência da CGU — três dias sem
+    recalcular prazo porque uma API de terceiro demorou a responder.
+    """
+    avisar = essencial if avisar is None else avisar
     _log(fh, f"-> {nome}: {' '.join(cmd)}")
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -66,7 +79,10 @@ def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
     fh.write(proc.stderr or "")
     if proc.returncode != 0:
         if not essencial:
-            _log(fh, f"~ {nome} falhou (rc={proc.returncode}) — elo interno, cadeia segue")
+            _log(fh, f"~ {nome} falhou (rc={proc.returncode}) — cadeia segue"
+                     f"{' (equipe avisada)' if avisar else ' (elo interno, sem alarme)'}")
+            if avisar:
+                _avisar_falha(nome, proc.returncode, interrompeu=False)
             return
         _log(fh, f"X {nome} FALHOU (rc={proc.returncode}) — cadeia interrompida")
         _avisar_falha(nome, proc.returncode)
@@ -89,7 +105,7 @@ def _refresh_detru(fh, zips=None, idade_max=None):
                 out.write(bloco)
 
 
-def _avisar_falha(nome: str, rc: int) -> None:
+def _avisar_falha(nome: str, rc: int, interrompeu: bool = True) -> None:
     """Cadeia parada = prazo sem vigilância. Falha silenciosa é o pior defeito
     possível neste produto, então o vermelho sai do host.
 
@@ -104,19 +120,31 @@ def _avisar_falha(nome: str, rc: int) -> None:
     caiu, a cadeia parou no primeiro elo e ninguém soube.
     """
     sys.path.insert(0, str(RAIZ / "backend"))
-    texto = (f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc}).\n"
-             f"Os prazos NÃO foram recalculados hoje.\n"
-             f"journalctl --user -u tuiu-diario -n 50")
+    # Mensagem que exagera é mensagem que se aprende a ignorar: dizer "os prazos
+    # NÃO foram recalculados" quando a cadeia seguiu queimaria o canal em uma
+    # semana — e este alarme precisa ser crível no dia em que o prazo de fato
+    # parar. Por isso o texto muda com `interrompeu`, e a chave de entrega junto:
+    # os dois casos são notícias diferentes e não podem se deduplicar entre si.
+    if interrompeu:
+        cabeca = f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc})."
+        consequencia = "Os prazos NÃO foram recalculados hoje."
+        campo = "FALHA: os prazos NÃO foram recalculados hoje"
+    else:
+        cabeca = f"🟠 Tuiú — elo *{nome}* falhou (rc={rc}); a cadeia seguiu."
+        consequencia = ("Os prazos FORAM recalculados normalmente. O que envelheceu "
+                        "foi este elo — confira antes de confiar no dado dele.")
+        campo = f"Elo {nome} falhou; prazos recalculados normalmente"
+    texto = f"{cabeca}\n{consequencia}\njournalctl --user -u tuiu-diario -n 50"
     hoje = date.today().isoformat()
     # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
     avisou, detalhe = _avisar(
         texto,
         ["Tuiú (aviso interno, não é de cliente)",
          f"cadeia diária — elo {nome} (rc={rc})",
-         "FALHA: os prazos NÃO foram recalculados hoje",
+         campo,
          f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
          "https://tuiu.araticum.net"],
-        chave=f"cadeia-falhou-{hoje}-{nome}")
+        chave=f"cadeia-{'parou' if interrompeu else 'seguiu'}-{hoje}-{nome}")
     if not avisou:
         print(f"[aviso] a equipe NÃO foi avisada ({detalhe}) — a falha fica só no log "
               f"e no `systemctl --user is-failed tuiu-diario`", file=sys.stderr)
@@ -229,8 +257,14 @@ def main():
         # eles o checklist do dossie fica 100% em branco (era assim ate 28/07).
         _refresh_detru(fh, ZIPS_DOCUMENTAIS, IDADE_MAX_DOCUMENTAL_H)
         _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
+        # NÃO essencial: é enriquecimento vindo de API de TERCEIRO (CGU). A
+        # vigília de prazo é o produto; sanção do convenente é contexto. Deixar
+        # este elo interromper entregou o controle da nossa cadeia à
+        # disponibilidade da CGU — e ela cobrou três dias em 31/07-02/08.
+        # `avisar=True` porque envelhecer calado também não serve.
         _passo(fh, "regularidade do terceiro (CEPIM/CEIS/CNEP)",
-               [py, "ingest/transparencia/coletar_regularidade.py"])
+               [py, "ingest/transparencia/coletar_regularidade.py"],
+               essencial=False, avisar=True)
         _passo(fh, "conferencia de integridade (g2 ao vivo)", [py, "ingest/transferegov_g2/verificar.py"])
         # o passo acima MEDE o frescor; este age sobre ele. Sem isto, dado velho
         # atravessava a cadeia inteira e saía como D-1.
