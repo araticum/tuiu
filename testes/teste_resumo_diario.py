@@ -39,8 +39,11 @@ def _item(rank=1, cliente="FUNDACAO EXEMPLO", instrumento="850704", dias=18,
             "dias": dias, "passo": passo, "de": "Em execução", "para": "Aguardando PC"}
 
 
-def _r(acionaveis, mudancas=8, com_orgao=2, sem_marco=0):
+def _r(acionaveis, mudancas=8, com_orgao=2, sem_marco=0, aberto=None):
+    aberto = aberto or []
     return {"dia": "2026-07-25", "mudancas": mudancas, "acionaveis": acionaveis,
+            "aberto": aberto,
+            "vencidos": sum(1 for i in acionaveis + aberto if (i["dias"] or 0) < 0),
             "com_orgao": com_orgao, "sem_marco": sem_marco, "mesa_aberta": 396}
 
 
@@ -83,6 +86,56 @@ def test_dia_com_acao_monta_a_mensagem(monkeypatch):
     assert r["motivo"] == "prévia" and r["texto"] and len(r["parametros"]) == 5
 
 
+# ------------------------------------------- notícia E saldo, não só notícia
+def test_dia_sem_movimento_mostra_o_que_esta_aberto():
+    """O falso negativo que o cliente reclamou.
+
+    Pendência parada há três anos não muda de estado, logo não vira evento. A
+    versão antiga mandava "nada exige sua ação" com a mesa cheia de prazo
+    vencido — quanto mais esquecida a pendência, menos chance de aparecer.
+    """
+    r = _r([], mudancas=0, com_orgao=0, aberto=[_item(dias=-1137), _item(dias=-540)])
+    p = rd.parametros(r, CONSOLE)
+    assert "Nenhuma mudança hoje" in p[0] and "2 pendências seguem abertas" in p[0]
+    assert p[1].startswith("FUNDACAO") and "vencido há 1137 dias" in p[1]
+    assert "nada exige" not in " ".join(p).lower()
+
+
+def test_noticia_vem_antes_do_saldo():
+    """O que mudou hoje abre a lista; o aberto completa. Inverter enterraria a
+    novidade sob anos de passivo."""
+    novo, velho = _item(instrumento="111", dias=30), _item(instrumento="222", dias=-900)
+    fila = rd.fila(_r([novo], aberto=[velho]))
+    assert fila[0]["instrumento"] == "111" and fila[1]["instrumento"] == "222"
+
+
+def test_item_que_mudou_hoje_nao_se_repete_no_saldo(monkeypatch):
+    """`montar` monta as duas listas da mesma mesa: sem o corte, o item do dia
+    apareceria duas vezes e o denominador mentiria."""
+    fonte = (RAIZ / "backend" / "app" / "resumo_diario.py").read_text(encoding="utf-8")
+    assert "ja_listado" in fonte and "chave not in ja_listado" in fonte
+
+
+def test_cauda_diz_quantas_estao_vencidas():
+    """É o número que mede a dívida — sem ele o saldo vira lista sem tamanho."""
+    r = _r([_item(dias=-10)], aberto=[_item(dias=-20), _item(dias=5)])
+    assert "2 estão com o prazo vencido" in rd.cauda_de(r)
+
+
+def test_dia_realmente_vazio_continua_quieto(monkeypatch):
+    """Quieto agora exige as DUAS listas vazias — mas quando estão, o caminho
+    honesto de frescor continua valendo."""
+    monkeypatch.setattr(rd, "montar", lambda dia=None: _r([], mudancas=0, com_orgao=0))
+    monkeypatch.setattr(rd, "frescor", lambda dia=None: {"conferido": True, "fresco": True})
+    assert rd.enviar(previa=True)["quieto"] is True
+
+
+def test_com_saldo_aberto_NAO_e_dia_quieto(monkeypatch):
+    monkeypatch.setattr(rd, "montar", lambda dia=None: _r([], mudancas=0, aberto=[_item(dias=-90)]))
+    monkeypatch.setattr(rd, "frescor", lambda dia=None: {"conferido": True, "fresco": True})
+    assert rd.enviar(previa=True)["quieto"] is False
+
+
 # ------------------------------------------------------------- o conteúdo
 def test_cabeca_traz_o_numerador_e_o_denominador():
     """É a frase do Danilo: 'de 200 mudanças, 5 precisam de você'."""
@@ -100,7 +153,7 @@ def test_sobra_vira_travessao_nao_item_inventado():
 
 def test_alem_do_topo_manda_para_a_mesa():
     p = rd.parametros(_r([_item(instrumento=str(i)) for i in range(7)]), CONSOLE)
-    assert "E mais 4 na mesa." == p[4]
+    assert p[4].startswith("Mais 4 na mesa.")
 
 
 def test_quando_nada_sobra_diz_o_que_esta_com_o_orgao():

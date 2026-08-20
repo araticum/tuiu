@@ -14,7 +14,7 @@ cima e não sobrar tempo, já fez o que importava.
 
 Um item precisa das TRÊS coisas ao mesmo tempo:
 
-1. **movimento** — mudou no snapshot de hoje (senão é backlog, não notícia);
+1. **movimento** — mudou no snapshot de hoje (isso é a NOTÍCIA);
 2. **faixa que pede ação** — a mesa já ordena por urgência; inadimplência de
    2019 é passivo antigo, não a fila do dia.
 
@@ -32,6 +32,22 @@ Marco de CLIENTE (instrumento nulo, como o agregado de prestações paradas) fic
 FORA: é backlog permanente, não notícia do dia. Incluí-lo fez "8 mudanças → 9
 pedem sua ação", com o numerador passando o denominador e destruindo a frase que
 dá sentido à mensagem. Ele vive na mesa, que a mensagem linka.
+
+## Notícia e saldo são coisas diferentes
+
+A primeira versão só mandava o que **mudou hoje**, tratando o resto como
+"backlog, não notícia". A consequência foi um gerador de falso negativo: uma
+pendência parada há três anos **não muda de estado**, logo não vira evento, logo
+nunca era notificada. Quanto mais antiga e mais esquecida, menos chance de
+aparecer — o inverso exato do que deveria.
+
+Na carteira de referência isso é a maioria: das linhas que são tarefa nossa,
+mais da metade está com o prazo VENCIDO, a pior há mais de três anos. Nenhuma se
+move; nenhuma aparecia.
+
+Então a mensagem passou a responder as DUAS perguntas: *o que mudou hoje* (a
+notícia, que abre a lista) e *o que está aberto comigo* (o saldo, que completa).
+Sem a segunda, "não chegou nada" continuava querendo dizer "não olhei".
 
 ## Dia quieto também é notícia
 
@@ -192,8 +208,27 @@ def montar(dia: date | None = None) -> dict:
     # permanente, não notícia do dia: enfiá-los no cálculo fez "8 mudanças → 9
     # pedem sua ação", com o numerador passando o denominador e destruindo a
     # frase que dá sentido à mensagem. Eles vivem na mesa, que a mensagem linka.
-    acionaveis.sort(key=lambda i: (i["rank"], i["dias"] if i["dias"] is not None else 99999))
+    def _urgencia(i: dict):
+        return (i["rank"], i["dias"] if i["dias"] is not None else 99999)
+
+    acionaveis.sort(key=_urgencia)
+
+    # O SALDO: o que é tarefa nossa e continua aberto, tenha se mexido hoje ou
+    # não. É o que faltava — pendência parada não gera evento, e sem esta lista
+    # ela nunca chegava a ninguém.
+    ja_listado = {(i["cnpj"], str(i["instrumento"])) for i in acionaveis}
+    aberto = [{"cnpj": item["cnpj"], "cliente": item["cliente"],
+               "instrumento": item["instrumento"],
+               "rotulo": f"Convênio/CR {item['instrumento']}",
+               "rank": item["rank"], "faixa": item["faixa"], "dias": item["dias"],
+               "passo": item["proximo_passo"], "peca": item.get("peca")}
+              for chave, item in mesa.items()
+              if item["rank"] in FAIXAS_ACIONAVEIS and chave not in ja_listado]
+    aberto.sort(key=_urgencia)
+
     return {"dia": dia.isoformat(), "mudancas": len(eventos), "acionaveis": acionaveis,
+            "aberto": aberto,
+            "vencidos": sum(1 for i in acionaveis + aberto if (i["dias"] or 0) < 0),
             "com_orgao": com_orgao, "sem_marco": sem_marco, "mesa_aberta": len(mesa)}
 
 
@@ -244,6 +279,43 @@ def linha_item(item: dict, link: str | None = None) -> str:
     return f"{encurtar(texto, min(LIMITE_ITEM, LIMITE_PARAMETRO - len(link) - 4))} → {link}"
 
 
+def fila(r: dict) -> list[dict]:
+    """Notícia primeiro, saldo depois — nesta ordem e sem repetir.
+
+    O que mudou hoje abre a lista porque é novidade; o que está aberto completa
+    porque é o trabalho. Antes só a primeira metade existia, e num dia sem
+    movimento a mensagem dizia "nada exige sua ação" com dezenas de prazos
+    vencidos parados na mesa.
+    """
+    return (r.get("acionaveis") or []) + (r.get("aberto") or [])
+
+
+def cabeca_de(r: dict) -> str:
+    """A frase que dá sentido ao resto: de quanto, quanto é seu."""
+    novos, abertos = len(r.get("acionaveis") or []), len(r.get("aberto") or [])
+    if novos:
+        frase = (f"{qtd(r['mudancas'], 'mudança', 'mudanças')} na carteira hoje. "
+                 f"{novos} {verbo(novos, 'pede', 'pedem')} sua ação.")
+        return frase + (f" Mais {abertos} seguem abertas com você." if abertos else "")
+    return (f"Nenhuma mudança hoje, mas "
+            f"{qtd(abertos, 'pendência segue aberta', 'pendências seguem abertas')} com você.")
+
+
+def cauda_de(r: dict) -> str:
+    """O que não coube, e o número que mede a dívida: quantas estão vencidas."""
+    partes = []
+    resto = len(fila(r)) - TOPO
+    if resto > 0:
+        partes.append(f"Mais {resto} na mesa.")
+    if r.get("vencidos"):
+        v = r["vencidos"]
+        partes.append(f"{v} {verbo(v, 'está', 'estão')} com o prazo vencido.")
+    if not partes and r.get("com_orgao"):
+        partes.append(f"{qtd(r['com_orgao'], 'mudança', 'mudanças')} "
+                      f"{verbo(r['com_orgao'], 'está', 'estão')} com o órgão — nada a fazer.")
+    return " ".join(partes) or "Só isso hoje."
+
+
 def parametros(r: dict, console_url: str) -> list[str]:
     """Os {{1}}..{{5}} do template `aviso_tuiu_resumo` (corpo em ferramentas/template_wpp.py).
 
@@ -251,15 +323,8 @@ def parametros(r: dict, console_url: str) -> list[str]:
     fixa; sobra vira travessão, que é feio mas honesto — a Meta recusa
     parâmetro vazio, e inventar item para preencher seria pior.
     """
-    itens = r["acionaveis"][:TOPO]
-    n = len(r["acionaveis"])
-    cabeca = (f"{qtd(r['mudancas'], 'mudança', 'mudanças')} na carteira hoje. "
-              f"{n} {verbo(n, 'pede', 'pedem')} sua ação.")
-    resto = len(r["acionaveis"]) - len(itens)
-    cauda = (f"E mais {resto} na mesa." if resto > 0 else
-             (f"{qtd(r['com_orgao'], 'mudança', 'mudanças')} "
-              f"{verbo(r['com_orgao'], 'está', 'estão')} com o órgão — nada a fazer."
-              if r["com_orgao"] else "Só isso hoje."))
+    itens = fila(r)[:TOPO]
+    cabeca, cauda = cabeca_de(r), cauda_de(r)
     return [cabeca,
             *[linha_item(i, link_item(i, console_url)) for i in itens],
             *[SEM_ITEM] * (TOPO - len(itens)),
@@ -269,15 +334,16 @@ def parametros(r: dict, console_url: str) -> list[str]:
 def texto(r: dict, console_url: str) -> str:
     """Versão legível para outbox/log — aqui a quebra de linha é permitida."""
     linhas = [f"📋 Tuiú · resumo de {r['dia'][8:10]}/{r['dia'][5:7]}",
-              "", f"{qtd(r['mudancas'], 'mudança', 'mudanças')} hoje · {len(r['acionaveis'])} "
-              f"{verbo(len(r['acionaveis']), 'pede', 'pedem')} sua ação", ""]
-    for n, i in enumerate(r["acionaveis"][:TOPO], 1):
+              "", cabeca_de(r), ""]
+    for n, i in enumerate(fila(r)[:TOPO], 1):
         linhas.append(f"{n}. {linha_item(i)}")
         rotulo = i["peca"]["titulo"] if i.get("peca") else "Mesa desta transferência"
         linhas.append(f"   → {rotulo}: {link_item(i, console_url)}")
-    resto = len(r["acionaveis"]) - TOPO
+    resto = len(fila(r)) - TOPO
     if resto > 0:
         linhas.append(f"…e mais {resto} na mesa.")
+    if r.get("vencidos"):
+        linhas.append(f"({r['vencidos']} {verbo(r['vencidos'], 'está', 'estão')} com o prazo vencido)")
     if r["com_orgao"]:
         linhas.append(f"({r['com_orgao']} mudança(s) estão com o órgão — nada a fazer)")
     linhas += ["", f"Mesa completa, já priorizada: {console_url}/mesa.html"]
@@ -292,8 +358,10 @@ def enviar(dia: date | None = None, previa: bool = False) -> dict:
     r = montar(dia)
     r["enviado"] = False
     r["frescor"] = frescor(dia)
-    # dia sem ação TAMBÉM sai: silêncio não distingue "nada mudou" de "quebrou"
-    r["quieto"] = not r["acionaveis"]
+    # quieto de VERDADE: nem novidade nem saldo aberto. Antes bastava não haver
+    # movimento, e a mensagem dizia "nada exige sua ação" com a mesa cheia de
+    # prazo vencido — o falso negativo que o cliente reclamou.
+    r["quieto"] = not fila(r)
     if r["quieto"]:
         r["texto"] = texto_quieto(r, CONSOLE_URL)
         r["parametros"] = parametros_quieto(r)
