@@ -47,8 +47,8 @@ def _limpo():
             con.commit()
     _apaga()
     with conectar() as con:
-        con.execute("INSERT INTO usuarios (login, nome, senha_hash, ativo)"
-                    " VALUES (%s,%s,%s,true)", (LOGIN, "Dono de Teste", "x"))
+        con.execute("INSERT INTO usuarios (login, nome, senha_hash, ativo, papel)"
+                    " VALUES (%s,%s,%s,true,'operador')", (LOGIN, "Dono de Teste", "x"))
         con.commit()
     yield
     _apaga()
@@ -107,8 +107,8 @@ def test_devolver_para_a_mesa():
 def test_reatribuir_troca_o_dono():
     atribuir(CHAVE, LOGIN, quem="pedro")
     with conectar() as con:
-        con.execute("INSERT INTO usuarios (login, nome, senha_hash, ativo)"
-                    " VALUES ('pytest_dono2','Outro','x',true)")
+        con.execute("INSERT INTO usuarios (login, nome, senha_hash, ativo, papel)"
+                    " VALUES ('pytest_dono2','Outro','x',true,'operador')")
         con.commit()
     atribuir(CHAVE, "pytest_dono2", quem="pedro")
     assert _linha()[0] == "pytest_dono2"
@@ -127,6 +127,18 @@ def test_a_rota_tira_quem_da_SESSAO_nao_do_corpo():
     trecho = fonte[fonte.index("def fila_atribuir"):][:700]
     assert "request.state" in trecho and 'payload.get("quem"' not in trecho
     assert 'payload.get("atribuido_por"' not in trecho
+
+
+def test_leitor_nao_pode_receber_item():
+    """A conta `usuario` do host é papel `leitor` (read-only, login de
+    demonstração usado de 8 IPs) e aparecia no seletor. Atribuir tarefa a quem
+    não pode executá-la é dono fantasma com crachá."""
+    with conectar() as con:
+        con.execute("INSERT INTO usuarios (login, nome, senha_hash, ativo, papel)"
+                    " VALUES ('pytest_leitor','Leitor','x',true,'leitor')")
+        con.commit()
+    assert "pytest_leitor" not in {r["login"] for r in responsaveis()}
+    assert atribuir(CHAVE, "pytest_leitor", quem="pedro")["ok"] is False
 
 
 def test_responsaveis_lista_so_ativos():

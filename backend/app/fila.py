@@ -208,14 +208,21 @@ def triar(chave: str, status: str, nota: str | None = None, operador: str | None
 
 
 def responsaveis() -> list[dict]:
-    """Quem pode receber item: usuário ativo do console, e mais ninguém.
+    """Quem pode receber item: **operador** ativo, e mais ninguém.
 
-    Atribuir para texto livre criaria dono fantasma — item que parece coberto e
-    não está é pior que item sem dono, porque ninguém procura por ele.
+    Duas travas em série, e as duas custaram para aparecer:
+
+    - texto livre criaria dono fantasma — item que parece coberto e não está é
+      pior que item sem dono, porque ninguém procura por ele;
+    - `ativo` sozinho NÃO basta. A primeira versão filtrava só por isso e
+      oferecia a conta `usuario`, que é papel `leitor` — read-only, usada como
+      login de demonstração de 8 IPs distintos. Atribuir tarefa a quem não pode
+      executá-la é a mesma fantasma com crachá.
     """
     with conectar() as con:
         return [{"login": lg, "nome": nm} for lg, nm in con.execute(
-            "SELECT login, nome FROM usuarios WHERE ativo ORDER BY nome")]
+            "SELECT login, nome FROM usuarios WHERE ativo AND papel = 'operador'"
+            " ORDER BY nome")]
 
 
 def atribuir(chave: str, responsavel: str | None, quem: str | None = None) -> dict:
