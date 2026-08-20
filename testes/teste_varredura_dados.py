@@ -211,3 +211,43 @@ def test_persistir_confere_por_cliente_antes_de_apagar():
     assert "raise SystemExit" in trecho, "recusar tem que interromper, não avisar"
     assert trecho.index("sumiram") < trecho.index("DELETE FROM execucao_convenio"), \
         "a conferência tem que vir ANTES do DELETE"
+
+
+# ------------------------------------- 4. o CPF que a tela gravaria inteiro
+def test_cpf_e_mascarado_na_entrada():
+    """`PRIVACY.md` declara ao titular e ao fiscal que "o CPF completo não
+    temos". A via automática sempre respeitou; a via de TELA exigia 11 dígitos e
+    gravava o número inteiro — e ainda recusava o mascarado que a outra via do
+    mesmo produto grava.
+
+    Nunca chegou a gravar: as 84 linhas de produção vieram todas da via
+    automática, todas mascaradas. Era rota carregada e não disparada, igual ao
+    smoke — e o conserto é o mesmo: fechar antes de alguém puxar o gatilho.
+    """
+    from app.cliente_ficha import mascarar_cpf
+    assert mascarar_cpf("12379071812") == "***790718**"
+    assert mascarar_cpf("123.790.718-12") == "***790718**", "pontuação não muda nada"
+    assert "790718" in mascarar_cpf("12379071812")
+    for saida in (mascarar_cpf("12379071812"), mascarar_cpf("123.790.718-12")):
+        assert "1237" not in saida and saida.count("*") == 5
+
+
+def test_mascara_ja_mascarada_volta_igual():
+    """Idempotência: a via automática entrega já mascarado, e passar duas vezes
+    não pode comer dígito."""
+    from app.cliente_ficha import mascarar_cpf
+    assert mascarar_cpf("***790718**") == "***790718**"
+    assert mascarar_cpf(mascarar_cpf("12379071812")) == "***790718**"
+
+
+@pytest.mark.parametrize("lixo", ["", "abc", "123", "0" * 20])
+def test_cpf_impossivel_e_recusado(lixo):
+    from app.cliente_ficha import mascarar_cpf
+    assert mascarar_cpf(lixo) == ""
+
+
+def test_a_rota_nao_exige_mais_o_numero_inteiro():
+    fonte = (RAIZ / "backend" / "app" / "cliente_ficha.py").read_text(encoding="utf-8")
+    trecho = fonte[fonte.index("def cadastrar_pessoa"):][:900]
+    assert "mascarar_cpf(cpf)" in trecho
+    assert "len(cpf_d) != 11" not in trecho, "voltou a exigir o CPF completo"
