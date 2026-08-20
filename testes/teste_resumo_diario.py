@@ -101,6 +101,20 @@ def test_dia_sem_movimento_mostra_o_que_esta_aberto():
     assert "nada exige" not in " ".join(p).lower()
 
 
+def test_nao_diz_que_nada_mudou_quando_a_mudanca_foi_do_orgao():
+    """Caso real de 20/08: 6 mudanças, todas com o concedente, 0 acionáveis.
+
+    "Nenhuma mudança hoje" seria falso — o que não houve foi mudança NOSSA."""
+    p = rd.parametros(_r([], mudancas=6, com_orgao=6, aberto=[_item(dias=-90)]), CONSOLE)
+    assert "Nenhuma mudança" not in p[0]
+    assert "6 mudanças hoje, nenhuma exige sua ação" in p[0]
+
+
+def test_diz_nenhuma_mudanca_so_quando_de_fato_nao_houve():
+    p = rd.parametros(_r([], mudancas=0, com_orgao=0, aberto=[_item(dias=-90)]), CONSOLE)
+    assert p[0].startswith("Nenhuma mudança hoje")
+
+
 def test_noticia_vem_antes_do_saldo():
     """O que mudou hoje abre a lista; o aberto completa. Inverter enterraria a
     novidade sob anos de passivo."""

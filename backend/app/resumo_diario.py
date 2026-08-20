@@ -297,8 +297,14 @@ def cabeca_de(r: dict) -> str:
         frase = (f"{qtd(r['mudancas'], 'mudança', 'mudanças')} na carteira hoje. "
                  f"{novos} {verbo(novos, 'pede', 'pedem')} sua ação.")
         return frase + (f" Mais {abertos} seguem abertas com você." if abertos else "")
-    return (f"Nenhuma mudança hoje, mas "
-            f"{qtd(abertos, 'pendência segue aberta', 'pendências seguem abertas')} com você.")
+    saldo = qtd(abertos, "pendência segue aberta", "pendências seguem abertas")
+    # "nenhuma mudança" e "mudou, mas nada é seu" são fatos diferentes: houve dia
+    # com 6 mudanças, todas com o órgão, e dizer que não houve mudança seria a
+    # mesma mentira pequena que este módulo existe para não contar.
+    if r.get("mudancas"):
+        return (f"{qtd(r['mudancas'], 'mudança', 'mudanças')} hoje, nenhuma exige sua ação. "
+                f"{saldo} com você.")
+    return f"Nenhuma mudança hoje, mas {saldo} com você."
 
 
 def cauda_de(r: dict) -> str:
