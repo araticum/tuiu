@@ -96,7 +96,13 @@ def montar(cliente: str | None = None) -> dict:
         except Exception:  # noqa: BLE001
             con.rollback()
             dossies = {}
-        status = {r[0]: r[1] for r in con.execute("SELECT chave, status FROM fila_status")}
+        # responsável junto do status: são a mesma pergunta do mesmo objeto
+        # ("de quem é" / "como está"), e separar obrigaria segundo join
+        marcas = {r[0]: {"status": r[1], "responsavel": r[2], "nome": r[3]}
+                  for r in con.execute(
+                      "SELECT f.chave, f.status, f.responsavel, u.nome FROM fila_status f"
+                      " LEFT JOIN usuarios u ON u.login = f.responsavel")}
+        status = {k: v["status"] for k, v in marcas.items()}
 
         sql = ("SELECT cnpj, tipo, instrumento, data_limite, descricao, base_legal, farol, detalhes"
                " FROM marcos WHERE farol <> 'ok'")
@@ -118,6 +124,10 @@ def montar(cliente: str | None = None) -> dict:
             exig = (ultimo.get("parecer") if isinstance(ultimo, dict) else None) or ""
             itens.append({
                 "chave": chave, "status": status.get(chave, "aberto"),
+                # None = sem dono. É o número que a mesa precisa mostrar em
+                # destaque: item sem dono não é item coberto.
+                "responsavel": (marcas.get(chave) or {}).get("responsavel"),
+                "responsavel_nome": (marcas.get(chave) or {}).get("nome"),
                 # nome_exibicao, não `clientes.get` cru: é o furo que o docstring
                 # dele adverte — quem resolve o nome por fora perde o rótulo à mão
                 # e a correção ortográfica, e a mesa mostrava CAIXA ALTA sem acento

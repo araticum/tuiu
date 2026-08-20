@@ -205,3 +205,39 @@ def triar(chave: str, status: str, nota: str | None = None, operador: str | None
             (chave, status, nota, operador))
         con.commit()
     return {"ok": True, "chave": chave, "status": status}
+
+
+def responsaveis() -> list[dict]:
+    """Quem pode receber item: usuário ativo do console, e mais ninguém.
+
+    Atribuir para texto livre criaria dono fantasma — item que parece coberto e
+    não está é pior que item sem dono, porque ninguém procura por ele.
+    """
+    with conectar() as con:
+        return [{"login": lg, "nome": nm} for lg, nm in con.execute(
+            "SELECT login, nome FROM usuarios WHERE ativo ORDER BY nome")]
+
+
+def atribuir(chave: str, responsavel: str | None, quem: str | None = None) -> dict:
+    """Diz DE QUEM é o item. `responsavel=None` devolve para a mesa.
+
+    Não encosta em `status`: atribuir não é começar a trabalhar. Marcar
+    `em_andamento` aqui mentiria sobre o andamento de tudo que foi só
+    distribuído — e a mesa perderia a distinção entre "tem dono" e "está
+    andando", que é justamente o que se quer enxergar.
+    """
+    if not chave:
+        return {"ok": False, "erro": "chave ausente"}
+    if responsavel:
+        validos = {r["login"] for r in responsaveis()}
+        if responsavel not in validos:
+            return {"ok": False, "erro": f"'{responsavel}' não é usuário ativo do console"}
+    with conectar() as con:
+        con.execute(
+            "INSERT INTO fila_status (chave, responsavel, atribuido_em, atribuido_por)"
+            " VALUES (%s,%s,now(),%s)"
+            " ON CONFLICT (chave) DO UPDATE SET responsavel=EXCLUDED.responsavel,"
+            " atribuido_em=now(), atribuido_por=EXCLUDED.atribuido_por",
+            (chave, responsavel, quem))
+        con.commit()
+    return {"ok": True, "chave": chave, "responsavel": responsavel}

@@ -57,6 +57,10 @@
   .passo .dch{ display:inline-block; margin-top:4px; font-size:11px; cursor:pointer; border:1px solid var(--linha); border-radius:999px; padding:1px 9px }
   .passo .dch:hover{ border-color:var(--acento); text-decoration:none }
   .vazio{ color:var(--dim); padding:26px 0 }
+  .dono{ background:var(--card2); color:var(--tx); border:1px solid var(--linha); border-radius:7px;
+         padding:3px 7px; font-size:11.5px; max-width:150px; cursor:pointer }
+  .dono:hover{ border-color:var(--acento) }
+  .dono.orfao{ color:var(--acao); border-color:#5a2f1a }
   #mbg{ position:fixed; inset:0; background:#0008; display:none; align-items:center; justify-content:center; z-index:60 }
   #mbox{ background:var(--card); border:1px solid var(--linha); border-radius:13px; width:min(560px,92vw); max-height:86vh; overflow:auto; box-shadow:0 20px 60px #000b }
   #mbox .mh{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--linha); position:sticky; top:0; background:var(--card) }
@@ -85,6 +89,7 @@
 </div>
 
 <div class="resumo" id="resumo"></div>
+<div class="resumo" id="filtro-dono"></div>
 <div id="board"><div class="vazio">carregando a mesa…</div></div>
 <div id="mbg" onclick="if(event.target.id==='mbg')fecharDossie()"><div id="mbox"></div></div>
 <div id="toast"></div>
@@ -126,6 +131,17 @@ function prazo(i){
   return `<b class="${cls}">${dbr(i.responder_ate)}</b><span class="d ${cls}">${txt}</span>`;
 }
 
+// Item sem dono NÃO é item coberto — por isso "sem dono" é o estado visível, e
+// não um espaço em branco. Espaço em branco some; rótulo cobra.
+function dono(i){
+  const nome = i.responsavel_nome || i.responsavel;
+  const opts = ['<option value="">— sem dono —</option>'].concat(
+    RESPONSAVEIS.map(r => `<option value="${esc(r.login)}"${r.login===i.responsavel?" selected":""}>${esc(r.nome)}</option>`)
+  ).join("");
+  return `<select class="dono ${nome?"":"orfao"}" title="de quem é este item"
+            onchange="atribuir('${esc(i.chave)}', this.value)">${opts}</select>`;
+}
+
 function linha(i){
   const inst = i.instrumento?`<span class="inst">${esc(i.instrumento)}</span> · `:"";
   const fase = i.ultima_fase?`<div class="fase">↳ última mudança: ${esc(i.ultima_fase.rotulo||"")} ${esc(i.ultima_fase.transicao||"")}</div>`:"";
@@ -142,6 +158,7 @@ function linha(i){
     <div class="passo">${esc(i.proximo_passo)}<span class="bl">${esc(i.base_legal||"")}</span>
       ${dossieChip(i)}</div>
     <div class="acts">
+      ${dono(i)}
       <button class="b ${andando?'andando':''}" onclick="triar('${esc(i.chave)}','${andando?'aberto':'em_andamento'}')">${andando?'▶ em andamento':'iniciar'}</button>
       <button class="b ok" onclick="triar('${esc(i.chave)}','resolvido')">✓ resolver</button>
     </div>
@@ -150,7 +167,9 @@ function linha(i){
 
 function render(){
   const board = document.getElementById("board"), res = document.getElementById("resumo");
-  const itens = (DADOS.itens||[]).filter(i=>filtro==null || i.faixa===filtro);
+  const itens = (DADOS.itens||[]).filter(i=>
+    (filtro==null || i.faixa===filtro) &&
+    (filtroDono==null || (filtroDono==="" ? !i.responsavel : i.responsavel===filtroDono)));
   const din = DADOS.dinheiro||{};
   document.getElementById("carimbo").textContent =
     `${qtd(DADOS.total, "pendência", "pendências")} · ${qtd(DADOS.clientes, "cliente", "clientes")}`
@@ -160,6 +179,20 @@ function render(){
       <span class="rk" style="background:${COR[r.rank]||'#4d6b9a'}">${r.rank}</span>
       <b>${r.n}</b> <span>${esc(r.faixa)}</span></div>`).join("")
     + (filtro!=null?`<div class="chip" onclick="setFiltro(null)" style="border-color:var(--acento)">✕ limpar filtro</div>`:"");
+  // "sem dono" primeiro e sempre visível: é o número que mede a cobertura da
+  // mesa, e ele só cobra enquanto estiver na frente de quem distribui
+  const todos = DADOS.itens||[];
+  const orfaos = todos.filter(i=>!i.responsavel).length;
+  const porDono = {};
+  todos.forEach(i=>{ if(i.responsavel) porDono[i.responsavel]=(porDono[i.responsavel]||0)+1; });
+  document.getElementById("filtro-dono").innerHTML =
+    `<div class="chip ${filtroDono!==null?'off':''}" onclick="setFiltroDono(null)">todos <b>${todos.length}</b></div>`
+    + `<div class="chip ${filtroDono===""?'':'off'}" style="border-color:${orfaos?'var(--acao)':'var(--linha)'}"
+         onclick="setFiltroDono('')">sem dono <b>${orfaos}</b></div>`
+    + Object.entries(porDono).sort((a,b)=>b[1]-a[1]).map(([lg,n])=>{
+        const nm = (RESPONSAVEIS.find(x=>x.login===lg)||{}).nome || lg;
+        return `<div class="chip ${filtroDono===lg?'':'off'}" onclick="setFiltroDono('${esc(lg)}')">${esc(nm)} <b>${n}</b></div>`;
+      }).join("");
   if(!itens.length){ board.innerHTML = `<div class="vazio">Nada pendente aqui. 🎉</div>`; return; }
   // agrupa por faixa preservando a ordem de rank
   const grupos = [];
@@ -173,6 +206,26 @@ function render(){
 }
 
 function setFiltro(f){ filtro = (f===null||filtro===f)?null:f; render(); }
+
+let RESPONSAVEIS = [], filtroDono = null;   // null = todos · "" = sem dono · login
+
+async function atribuir(chave, login){
+  try{
+    const r = await fetch("/api/fila/atribuir",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({chave, responsavel: login || null})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.erro || "falhou");
+    const it = DADOS.itens.find(x=>x.chave===chave);
+    if(it){
+      it.responsavel = d.responsavel;
+      it.responsavel_nome = (RESPONSAVEIS.find(x=>x.login===d.responsavel)||{}).nome || null;
+    }
+    toast(d.responsavel ? `agora é de ${it.responsavel_nome||d.responsavel}` : "devolvido para a mesa");
+    render();
+  }catch(e){ toast(e.message || "falhou"); }
+}
+
+function setFiltroDono(v){ filtroDono = v; render(); }
 
 async function triar(chave, status){
   try{
@@ -235,8 +288,13 @@ function fecharDossie(){ document.getElementById("mbg").style.display="none";
 // contexto do cliente sem recarregar, e o aviso abaixo dá esse caminho.
 const P = new URLSearchParams(location.search);
 const clienteFiltro = P.get("cliente"), instrFiltro = P.get("instrumento");
-fetch("/api/mesa" + (clienteFiltro ? `?cliente=${encodeURIComponent(clienteFiltro)}` : ""))
-  .then(r=>r.json()).then(d=>{
+Promise.all([
+  fetch("/api/mesa" + (clienteFiltro ? `?cliente=${encodeURIComponent(clienteFiltro)}` : "")).then(r=>r.json()),
+  fetch("/api/responsaveis").then(r=>r.json()).catch(()=>({responsaveis:[]})),
+]).then(([d, resp])=>{
+  RESPONSAVEIS = resp.responsaveis || [];
+  return d;
+}).then(d=>{
   if(!d.disponivel){ document.getElementById("board").innerHTML = `<div class="vazio">indisponível: ${esc(d.erro||"—")}</div>`; return; }
   DADOS = d;
   if(instrFiltro){

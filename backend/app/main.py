@@ -205,6 +205,26 @@ def fila_triar(payload: dict):
                  payload.get("nota"), payload.get("operador"))
 
 
+@app.get("/api/responsaveis")
+def api_responsaveis():
+    """Para quem a mesa pode atribuir. Operador-only, como o resto da mesa."""
+    from app.fila import responsaveis
+    return {"responsaveis": responsaveis()}
+
+
+@app.post("/api/fila/atribuir")
+def fila_atribuir(payload: dict, request: Request):
+    """Diz de quem é o item. `responsavel: null` devolve para a mesa.
+
+    Quem ATRIBUIU sai da sessão, nunca do corpo: é campo de auditoria, e aceitar
+    do cliente deixaria qualquer um assinar a atribuição com o nome de outro.
+    O `responsavel` vem do corpo porque distribuir para terceiro é o caso normal.
+    """
+    from app.fila import atribuir
+    quem = (getattr(request.state, "usuario", None) or {}).get("login")
+    return atribuir(payload.get("chave", ""), payload.get("responsavel"), quem)
+
+
 @app.get("/api/mesa")
 def mesa(cliente: str | None = None):
     """Mesa de trabalho: backlog de prestação de contas priorizado por faixa
