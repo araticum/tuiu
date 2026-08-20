@@ -91,6 +91,26 @@ def _passo(fh, nome: str, cmd: list[str], essencial: bool = True,
 
 
 def _refresh_detru(fh, zips=None, idade_max=None):
+    """Baixa os ZIPs do detru — com rede tratada e escrita atômica.
+
+    Duas falhas moravam aqui, e as duas são da família que já custou três dias
+    em 31/07-02/08:
+
+    1. `urlopen` cru, FORA de `_passo`. `_avisar_falha` só dispara de dentro de
+       `_passo`, então uma queda do gov.br matava a cadeia antes do primeiro elo
+       essencial — sem log de falha e sem WhatsApp. Era a mesma quebra silenciosa
+       que consertamos no coletor da CGU, na única rota de rede que sobrou.
+    2. Escrita DIRETA sobre o alvo. Download interrompido deixava arquivo
+       truncado com data nova, que passava por "cache fresco" na rodada seguinte
+       e nas outras todas — falha diária permanente até alguém apagar à mão.
+
+    Agora: baixa para `.parcial`, confere que é ZIP de verdade, e só então
+    renomeia. Falha com cache antigo em disco DEGRADA (avisa e segue com o
+    velho, que é dado defasado mas real); falha sem cache nenhum INTERROMPE,
+    porque aí não há o que processar.
+    """
+    import zipfile
+
     CACHE_DETRU.mkdir(parents=True, exist_ok=True)
     idade_max = IDADE_MAX_H if idade_max is None else idade_max
     for nome in (zips or ZIPS_DETRU):
@@ -100,9 +120,25 @@ def _refresh_detru(fh, zips=None, idade_max=None):
             _log(fh, f"detru {nome}: cache fresco ({idade_h:.1f}h) — mantido")
             continue
         _log(fh, f"detru {nome}: baixando (cache com {idade_h:.1f}h)")
-        with urllib.request.urlopen(f"{DOWNLOADS}/{nome}", timeout=300) as r, open(alvo, "wb") as out:
-            while bloco := r.read(1 << 20):
-                out.write(bloco)
+        parcial = alvo.with_name(alvo.name + ".parcial")
+        try:
+            with urllib.request.urlopen(f"{DOWNLOADS}/{nome}", timeout=300) as r,                     open(parcial, "wb") as out:
+                while bloco := r.read(1 << 20):
+                    out.write(bloco)
+            if not zipfile.is_zipfile(parcial):
+                raise OSError("baixou, mas não é um ZIP válido (resposta truncada ou de erro)")
+            parcial.replace(alvo)          # atômico: ou o antigo, ou o novo inteiro
+        except Exception as e:  # noqa: BLE001
+            parcial.unlink(missing_ok=True)
+            tem_velho = alvo.exists()
+            _log(fh, f"! detru {nome} FALHOU no download: {type(e).__name__}: {e}"
+                     + (f" — seguindo com o cache de {idade_h:.1f}h" if tem_velho
+                        else " — e NÃO existe cache anterior"))
+            if tem_velho:
+                _avisar_falha(f"download do detru ({nome})", 1, interrompeu=False)
+                continue
+            _avisar_falha(f"download do detru ({nome}) sem cache anterior", 1)
+            raise SystemExit(1)
 
 
 def _avisar_falha(nome: str, rc: int, interrompeu: bool = True) -> None:

@@ -86,6 +86,34 @@ def persistir() -> dict:
     marcadores = ", ".join(f"%({c})s" for c in COLS)
     set_ = ", ".join(f"{c}=EXCLUDED.{c}" for c in COLS if c not in ("cnpj", "instrumento"))
     with conectar() as con:
+        # QUEM tinha linha antes, entre os clientes que continuam ativos. É o
+        # denominador da conferência abaixo — sem ele, o DELETE que "espelha a
+        # rodada" não distingue "o convênio saiu" de "o recorte veio vazio".
+        antes = {c for (c,) in con.execute(
+            "SELECT DISTINCT cnpj FROM execucao_convenio"
+            + (" WHERE cnpj = ANY(%s)" if ativos else ""),
+            (list(ativos),) if ativos else ())}
+        agora = {l["cnpj"] for l in linhas}
+        sumiram = antes - agora
+        if sumiram:
+            # Perda silenciosa em operação NORMAL: `detru_recorte` só grava
+            # `legado/convenio.csv` quando há linhas, e o recorte nasce em pasta
+            # nova a cada dia. Cliente que numa rodada não casa convênio nenhum
+            # perderia TODAS as suas linhas de repasse, desembolso e saldo — a
+            # coluna de dinheiro que a mesa usa para priorizar — sem uma palavra
+            # no log, porque `main()` sai com 0 e o passo essencial só olha
+            # código diferente de zero.
+            #
+            # Some por decisão (cliente desligado) continua funcionando: esse
+            # caminho passa pela segunda cláusula do DELETE, com `ativos`.
+            raise SystemExit(
+                f"RECUSADO: {len(sumiram)} cliente(s) ativo(s) tinham execução na base e "
+                f"vieram SEM nenhuma linha neste recorte ({snap.name}). Isso apagaria o "
+                f"histórico financeiro deles.\n"
+                f"  CNPJ: {', '.join(sorted(sumiram)[:5])}"
+                f"{' …' if len(sumiram) > 5 else ''}\n"
+                f"  Confira o recorte antes de insistir — provavelmente o `legado/convenio.csv` "
+                f"não foi gerado para esses clientes.")
         inicio = con.execute("SELECT clock_timestamp()").fetchone()[0]
         for l in linhas:
             con.execute(
