@@ -965,4 +965,38 @@ def cfg_reprocessar():
         raise HTTPException(500, str(exc)) from exc
 
 
+# ------------------------------------------------- distribuição da fila (admin)
+# Mora sob /api/config de propósito: o middleware acima já barra não-admin nesse
+# prefixo, e repartir trabalho entre pessoas é decisão de gestão, não de
+# operação. Pendurar aqui evita um segundo portão para manter em dia.
+@app.get("/api/config/distribuicao")
+def api_distribuicao():
+    """Quadro para decidir a cota: quem existe, quanto já tem, quanto falta dar."""
+    from app.distribuicao import cotas, sem_dono
+    return {"cotas": cotas(), "sem_dono": len(sem_dono())}
+
+
+@app.post("/api/config/distribuicao/cotas")
+def api_distribuicao_cotas(payload: dict, request: Request):
+    from app.distribuicao import gravar_cotas
+    quem = (getattr(request.state, "usuario", None) or {}).get("login")
+    return gravar_cotas(payload.get("cotas") or {}, quem)
+
+
+@app.post("/api/config/distribuicao/simular")
+def api_distribuicao_simular(payload: dict):
+    """O plano ANTES de aplicar. Distribuir trabalho às cegas não se desfaz com
+    um clique: cada item vira tarefa de uma pessoa real."""
+    from app.distribuicao import planejar
+    return planejar(bool(payload.get("agrupar_por_cliente", True)), payload.get("cliente"))
+
+
+@app.post("/api/config/distribuicao/aplicar")
+def api_distribuicao_aplicar(payload: dict, request: Request):
+    from app.distribuicao import aplicar
+    quem = (getattr(request.state, "usuario", None) or {}).get("login")
+    return aplicar(bool(payload.get("agrupar_por_cliente", True)),
+                   payload.get("cliente"), quem)
+
+
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))
