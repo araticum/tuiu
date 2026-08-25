@@ -163,7 +163,8 @@ def texto_quieto(r: dict, console_url: str) -> str:
     cabeca, primeiro = estado_quieto(r)
     linhas = [f"📋 Tuiú · resumo de {r['dia'][8:10]}/{r['dia'][5:7]}", "", cabeca, "", primeiro]
     if r["com_orgao"]:
-        linhas.append(f"({r['com_orgao']} mudança(s) estão com o órgão — nada a fazer)")
+        linhas.append(f"({qtd(r['com_orgao'], 'mudança', 'mudanças')} "
+                      f"{verbo(r['com_orgao'], 'está', 'estão')} com o órgão — nada a fazer)")
     linhas += ["", f"Mesa completa, já priorizada: {console_url}/mesa.html"]
     return "\n".join(linhas)
 
@@ -351,7 +352,8 @@ def texto(r: dict, console_url: str) -> str:
     if r.get("vencidos"):
         linhas.append(f"({r['vencidos']} {verbo(r['vencidos'], 'está', 'estão')} com o prazo vencido)")
     if r["com_orgao"]:
-        linhas.append(f"({r['com_orgao']} mudança(s) estão com o órgão — nada a fazer)")
+        linhas.append(f"({qtd(r['com_orgao'], 'mudança', 'mudanças')} "
+                      f"{verbo(r['com_orgao'], 'está', 'estão')} com o órgão — nada a fazer)")
     linhas += ["", f"Mesa completa, já priorizada: {console_url}/mesa.html"]
     return "\n".join(linhas)
 

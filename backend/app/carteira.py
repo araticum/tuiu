@@ -99,6 +99,28 @@ def nome_exibicao(cnpj: str, fallback: str | None = None, nomes: dict | None = N
     return ROTULOS.get(cnpj) or exibir(nomes.get(cnpj) or fallback) or cnpj
 
 
+def escopo_instrumentos() -> set[tuple[str, str]]:
+    """Pares (cnpj, instrumento) que a casa ACOMPANHA — a fila de trabalho.
+
+    Não confundir com a carteira: `docs_ativos()` responde "de quem cuidamos",
+    isto responde "de qual instrumento DAQUELE cliente cuidamos". O recorte traz
+    a vida federal inteira de cada CNPJ, e faz bem — a ficha do cliente precisa
+    dela. Mas a mesa e a notificação são fila, e ali entra só o que se opera.
+
+    Conjunto VAZIO significa "não sei filtrar", e o chamador deve mostrar tudo.
+    Degradar para o comportamento antigo é seguro; filtrar contra uma lista
+    vazia esvaziaria a mesa e ninguém entenderia por quê.
+    """
+    from app.db import conectar
+
+    try:
+        with conectar() as con:
+            return {(c, str(i)) for c, i in con.execute(
+                "SELECT cnpj, instrumento FROM instrumentos_escopo WHERE ativo")}
+    except Exception:  # noqa: BLE001 — tabela ainda não migrada: não filtra
+        return set()
+
+
 def _data_br(s: str | None) -> date | None:
     try:
         return datetime.strptime((s or "").strip(), "%d/%m/%Y").date()

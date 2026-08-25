@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.carteira import nome_exibicao
+from app.carteira import escopo_instrumentos, nome_exibicao
 from app.db import conectar
 from app.notificador import CONSOLE_URL
 from app.dossie import percentuais as dossie_percentuais
@@ -111,9 +111,19 @@ def montar(cliente: str | None = None) -> dict:
             sql += " AND cnpj = %s"
             args = (cliente,)
 
+        # ESCOPO: cliente na carteira não é o mesmo que instrumento sob
+        # acompanhamento. Sem este filtro, um cliente com 40 convênios no dump
+        # federal enchia a fila com os 37 que a casa não opera — 38% da
+        # notificação de 25/08 era isso, incluindo o item do topo.
+        escopo = escopo_instrumentos()
+
         itens = []
         for cnpj, tipo, instr, limite, desc, base, farol, det in con.execute(sql, args):
             if cnpj not in clientes:          # a mesa é da carteira de CLIENTES
+                continue
+            # marco de CLIENTE (instrumento nulo) passa: ele agrega o cliente
+            # inteiro e não tem instrumento para conferir contra o escopo
+            if escopo and instr is not None and (cnpj, str(instr)) not in escopo:
                 continue
             d = det or {}
             bola = d.get("bola_com", "convenente")

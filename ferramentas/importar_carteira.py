@@ -32,6 +32,11 @@ o primeiro ensaio marcou 0 de 352 sem levantar erro nenhum.
 
 ## O que este comando NÃO faz
 
+**Grava também o ESCOPO**, em `instrumentos_escopo`: quais convênios de cada
+cliente a casa acompanha. Sem isso a mesa mostrava a vida federal inteira do
+CNPJ — 38% da notificação de 25/08 era instrumento que ninguém opera, incluindo
+o item do topo da mensagem.
+
 **Não apaga cliente nenhum.** Quem sai da carteira vira `ativo=false`, e
 `carteira.docs_ativos()` já filtra por isso. Marcos, eventos e histórico da fila
 continuam no banco: desligar é reversível, apagar não é, e a carteira antiga é
@@ -181,6 +186,15 @@ def main() -> int:
     migrar()
     with conectar() as con:
         atuais = {d: (n, a) for d, n, a in con.execute("SELECT doc, nome, ativo FROM clientes")}
+    pares = {(r["cnpj"], str(r["convenio"] or r["proposta"]))
+             for r in resolvidos if (r["convenio"] or r["proposta"])}
+    with conectar() as con:
+        try:
+            no_escopo = {(c, str(i)) for c, i in con.execute(
+                "SELECT cnpj, instrumento FROM instrumentos_escopo WHERE ativo")}
+        except Exception:  # noqa: BLE001 — antes da migração
+            con.rollback()
+            no_escopo = set()
     entram = [d for d in novos if d not in atuais]
     reativam = [d for d in novos if d in atuais and not atuais[d][1]]
     desligam = [d for d, (_, ativo) in atuais.items() if ativo and d not in novos]
@@ -188,6 +202,8 @@ def main() -> int:
     print(f"  entram novos:        {len(entram)}")
     print(f"  já existem e ficam:  {len(novos) - len(entram)}"
           + (f" (dos quais {len(reativam)} reativados)" if reativam else ""))
+    print(f"  instrumentos no escopo: {len(pares)}"
+          f"  ({len(pares - no_escopo)} novos, {len(no_escopo - pares)} saem da fila)")
     print(f"  saem da carteira:    {len(desligam)}"
           + ("  [--manter-antigos: nenhum sai]" if args.manter_antigos
              else "  (ativo=false, não apagados)"))
@@ -211,6 +227,15 @@ def main() -> int:
                 (doc, c["nome"], c["apelido"]))
         if desligam and not args.manter_antigos:
             con.execute("UPDATE clientes SET ativo=false WHERE doc = ANY(%s)", (desligam,))
+        # o escopo é reescrito inteiro: desliga o que saiu da lista e liga o que
+        # entrou. `ativo=false` em vez de DELETE — tirar da fila não pode apagar
+        # o registro de que um dia esteve lá.
+        con.execute("UPDATE instrumentos_escopo SET ativo=false WHERE ativo")
+        for cnpj, instr in sorted(pares):
+            con.execute(
+                "INSERT INTO instrumentos_escopo (cnpj, instrumento, origem, ativo)"
+                " VALUES (%s,%s,'lista',true) ON CONFLICT (cnpj, instrumento)"
+                " DO UPDATE SET ativo=true, origem='lista'", (cnpj, instr))
         con.commit()
     print(f"\ngravado: {len(novos)} na carteira ativa, "
           f"{0 if args.manter_antigos else len(desligam)} desligados")
