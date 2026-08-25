@@ -58,7 +58,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--criar", metavar="LOGIN")
     ap.add_argument("--nome", default=None)
-    ap.add_argument("--papel", choices=("operador", "cliente"), default="operador")
+    # `leitor` existe no banco desde db/0025 e faltava aqui: sem esta opção, a
+    # única forma de criar conta só-leitura era editar o papel no SQL à mão.
+    ap.add_argument("--papel", choices=("operador", "cliente", "leitor"), default="operador")
     ap.add_argument("--cliente", metavar="CNPJ",
                     help="obrigatorio com --papel cliente: o unico CNPJ que a conta enxerga")
     ap.add_argument("--resetar", metavar="LOGIN")
