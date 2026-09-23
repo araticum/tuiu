@@ -31,6 +31,8 @@ COPY ferramentas/ /app/ferramentas/
 COPY db/ /app/db/
 COPY testes/ /app/testes/
 COPY ops/rodar_diario.py ops/sonda_atualizacao.py ops/relatorio_mensal.py ops/esperar_banco.py ops/entrypoint.sh /app/ops/
+# os scripts de deploy entram só porque a suíte os lê (teste_varredura_dados registra a barreira do smoke)
+COPY ops/deploy_araticum.sh ops/deploy_remoto.sh /app/ops/
 COPY pytest.ini /app/pytest.ini
 
 # data/ e ops/logs/ são bind mounts; /cache é o volume do modelo. Os três precisam
