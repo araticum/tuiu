@@ -18,19 +18,29 @@ cd /home/pedro/tuiu
 COMPOSE=(docker compose -f ops/compose.yaml)
 UNITS=~/.config/systemd/user
 
-SEM_TESTES=0
+SEM_TESTES=0; PREPARAR=1; APLICAR=1
 for a in "$@"; do
   case "$a" in
-    --sem-testes) SEM_TESTES=1 ;;
+    --sem-testes)  SEM_TESTES=1 ;;
+    --so-preparar) APLICAR=0 ;;    # build + testes, sem tocar a produção
+    --so-aplicar)  PREPARAR=0 ;;   # corte + subir + agendar, com a imagem já construída
     *) echo "argumento desconhecido: $a" >&2; exit 2 ;;
   esac
 done
 
-echo "==> 1. build da imagem"
 "${COMPOSE[@]}" config -q          # compose inválido para aqui, antes de qualquer efeito
-"${COMPOSE[@]}" build console
 
-if [ "$SEM_TESTES" = 0 ]; then
+if [ "$PREPARAR" = 1 ]; then
+  echo "==> 1. build da imagem"
+  "${COMPOSE[@]}" build console
+else
+  echo "==> 1. build pulado (--so-aplicar)"
+  docker image inspect tuiu-app:local >/dev/null 2>&1 || { echo "imagem tuiu-app:local não existe — rode sem --so-aplicar" >&2; exit 1; }
+fi
+
+if [ "$PREPARAR" = 0 ]; then
+  echo "==> 2. testes pulados (--so-aplicar)"
+elif [ "$SEM_TESTES" = 0 ]; then
   echo "==> 2. testes (Postgres descartável em tmpfs)"
   if ! "${COMPOSE[@]}" --profile teste run --rm -T testes; then
     "${COMPOSE[@]}" --profile teste rm -sf db-teste >/dev/null 2>&1 || true
@@ -40,6 +50,11 @@ if [ "$SEM_TESTES" = 0 ]; then
   "${COMPOSE[@]}" --profile teste rm -sf db-teste >/dev/null 2>&1 || true
 else
   echo "==> 2. testes pulados (--sem-testes)"
+fi
+
+if [ "$APLICAR" = 0 ]; then
+  echo "==> parando aqui (--so-preparar): imagem pronta e testada; produção intocada"
+  exit 0
 fi
 
 echo "==> 3. corte do modelo antigo (venv + systemd + projeto compose 'ops'), se houver"
