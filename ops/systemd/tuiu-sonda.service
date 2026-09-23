@@ -1,0 +1,10 @@
+[Unit]
+Description=Tuiu - sonda do horario de carga do Transferegov (roda no container)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pedro/tuiu
+# Um container por batida, com a imagem e o .env do compose; escreve em ops/logs/sonda-atualizacao.jsonl.
+ExecStart=/usr/bin/docker compose -f /home/pedro/tuiu/ops/compose.yaml run --rm -T sonda
+TimeoutStartSec=300

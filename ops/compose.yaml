@@ -1,0 +1,124 @@
+# Tuiú no araticum — tudo em container (decisão do dono, 23/09/2026: "nossa infra é
+# toda baseada em docker"). Substitui o venv + systemd --user que rodavam desde 19/07.
+#
+#   console   uvicorn publicado SÓ em 127.0.0.1:8600 do host — loopback de propósito: o
+#             console mostra dado de organizações reais; quem publica é o cloudflared do
+#             host (tuiu.araticum.net), decisão do dono e não efeito de deploy.
+#   db        Postgres DEDICADO (não há Postgres nativo no host e o `veredas-db` é produção
+#             do oasis.v2 — não se encosta). É o MESMO volume de antes (`ops_tuiu_pgdata`,
+#             criado pelo compose.db.yaml em 19/07): dado intacto, nenhuma migração de dado.
+#   cadeia    perfil `manual`: `docker compose run --rm -T cadeia` — quem chama é o evento
+#             `tuiu_diario` do xyOps, 09:30 (ops/xyops_eventos.py).
+#   sonda     perfil `manual`: `docker compose run --rm -T sonda` — quem chama é o timer
+#             systemd --user (ops/systemd/). Fica no systemd, não no xyOps, porque bate de
+#             10 em 10 min de manhã: é MEDIÇÃO, não automação (exceção 3 da regra da casa;
+#             72 jobs/dia no xyOps empurrariam o histórico dos pipes que importam).
+#   testes    perfil `teste`: pytest contra `db-teste`, Postgres descartável em tmpfs.
+#             NUNCA contra o `db`: teste_auth.py mexe em contas e smoke_eventos.py apaga
+#             tabela inteira (ver testes/_guarda_smoke.py).
+#
+# Subir/atualizar:  bash ops/deploy_araticum.sh   (da máquina de desenvolvimento)
+#                   docker compose -f ops/compose.yaml up -d --build   (no host)
+# Parar:            docker compose -f ops/compose.yaml down            (não apaga volume)
+# Logs:             docker compose -f ops/compose.yaml logs -f console
+name: tuiu
+
+x-app: &app
+  image: tuiu-app:local
+  env_file:                    # segredos do host (chmod 600, fora do git); nunca na imagem
+    - path: ../.env
+      required: false          # fora do host (dev, CI) o arquivo não existe e o compose ainda valida
+  environment: &app-env
+    TUIU_DSN: postgresql://postgres@db:5432/tuiu
+    PYTHONUTF8: "1"
+  volumes:
+    - ../data:/app/data          # recortes, detru, dossiês, radar… (977 MB em 23/09/2026)
+    - ./logs:/app/ops/logs       # diario-<data>.log e sonda-atualizacao.jsonl
+    - modelos:/cache             # modelo de embedding do guia (fastembed), baixado uma vez
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  db:
+    image: postgres:16-alpine    # já está no host; runtime mantém o nome (ops/registro-local do veredas)
+    container_name: tuiu-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tuiu
+      POSTGRES_HOST_AUTH_METHOD: trust   # só loopback do host e a rede interna deste compose
+    ports:
+      - "127.0.0.1:25432:5432"           # psql / remoto.py do host, como antes
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tuiu"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  console:
+    <<: *app
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+    container_name: tuiu-console
+    restart: unless-stopped
+    command: ["console"]
+    ports:
+      - "127.0.0.1:8600:8600"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8600/login.html', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 40s
+
+  cadeia:
+    <<: *app
+    profiles: [manual]
+    command: ["cadeia"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  sonda:
+    <<: *app
+    profiles: [manual]
+    command: ["sonda"]
+
+  db-teste:
+    image: postgres:16-alpine
+    profiles: [teste]
+    environment:
+      POSTGRES_DB: tuiu
+      POSTGRES_HOST_AUTH_METHOD: trust
+    tmpfs:
+      - /var/lib/postgresql/data       # descartável: morre com o container
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tuiu"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  testes:
+    <<: *app
+    profiles: [teste]
+    command: ["testes"]
+    environment:
+      <<: *app-env
+      TUIU_DSN: postgresql://postgres@db-teste:5432/tuiu
+    volumes: []                        # nada de data/ nem logs/ de produção nos testes
+    depends_on:
+      db-teste:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    external: true
+    name: ops_tuiu_pgdata              # o volume que o compose.db.yaml (projeto `ops`) criou em 19/07/2026
+  modelos:

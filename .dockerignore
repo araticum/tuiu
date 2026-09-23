@@ -1,0 +1,18 @@
+# O contexto de build é a raiz do repo (ops/compose.yaml: context ..). Só entra na
+# imagem o que o Dockerfile copia; isto aqui evita mandar gigas ao daemon e
+# garante que segredo e dado NUNCA entram numa camada.
+.git
+.claude
+.venv
+.env
+.env.*
+.pytest_cache
+**/__pycache__
+**/*.pyc
+data
+ops/logs
+ops/sessao
+.senha-inicial-*
+.perfil-*
+docs
+sonar-project.properties

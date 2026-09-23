@@ -1,0 +1,15 @@
+# Dependências da imagem do Tuiú (ops/Dockerfile).
+#
+# Os pinos são o `pip freeze` do venv que rodava no araticum em 23/09/2026 — a
+# imagem reproduz a produção que existia, não uma versão nova. Transitivas
+# (starlette, pydantic, tokenizers, huggingface_hub…) ficam a cargo do pip.
+fastapi==0.139.2
+uvicorn==0.51.0
+psycopg[binary]==3.3.4
+httpx==0.28.1
+duckdb==1.5.4
+pymupdf==1.28.0
+fastembed==0.8.0
+onnxruntime==1.27.0
+numpy==2.5.1
+pytest==9.1.1

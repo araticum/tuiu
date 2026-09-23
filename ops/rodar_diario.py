@@ -170,20 +170,21 @@ def _avisar_falha(nome: str, rc: int, interrompeu: bool = True) -> None:
         consequencia = ("Os prazos FORAM recalculados normalmente. O que envelheceu "
                         "foi este elo — confira antes de confiar no dado dele.")
         campo = f"Elo {nome} falhou; prazos recalculados normalmente"
-    texto = f"{cabeca}\n{consequencia}\njournalctl --user -u tuiu-diario -n 50"
     hoje = date.today().isoformat()
+    # a cadeia roda em container (xyOps → docker compose run cadeia); o log vive no bind mount
+    texto = f"{cabeca}\n{consequencia}\nLog: ops/logs/diario-{hoje}.log · job tuiu_diario no xyOps (:5522)"
     # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
     avisou, detalhe = _avisar(
         texto,
         ["Tuiú (aviso interno, não é de cliente)",
          f"cadeia diária — elo {nome} (rc={rc})",
          campo,
-         f"Ver o log: journalctl --user -u tuiu-diario -n 50 · {_br_hoje()}",
+         f"Ver o log: ops/logs/diario-{hoje}.log ou o job tuiu_diario no xyOps · {_br_hoje()}",
          "https://tuiu.araticum.net"],
         chave=f"cadeia-{'parou' if interrompeu else 'seguiu'}-{hoje}-{nome}")
     if not avisou:
         print(f"[aviso] a equipe NÃO foi avisada ({detalhe}) — a falha fica só no log "
-              f"e no `systemctl --user is-failed tuiu-diario`", file=sys.stderr)
+              f"e no job tuiu_diario do xyOps (:5522)", file=sys.stderr)
 
 
 def _br_hoje() -> str:

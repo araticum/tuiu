@@ -1,196 +1,37 @@
 #!/usr/bin/env bash
-# Deploy do Tuiú no araticum — cópia cirúrgica, sem git no host (padrão da casa).
+# Deploy do Tuiú no araticum — tudo em container (desde 23/09/2026).
 #
-# Sobe/atualiza:
-#   ~/tuiu/                       código (backend, ingest, ferramentas, ops, db)
-#   banco `tuiu` no Postgres do host (migrations aplicadas na hora)
-#   timer systemd --user           cadeia diária às 09h30 + sonda do horário de carga
+# Daqui (máquina de desenvolvimento) só sai o CÓDIGO, por tar/SSH, sem git no host
+# (padrão da casa). O trabalho de verdade — build da imagem, testes, corte, subir,
+# timer da sonda, evento do xyOps — é o ops/deploy_remoto.sh, que viaja no tar e
+# roda LÁ pelo caminho (código em arquivo, nunca em string de comando).
 #
-# NÃO encosta na stack veredas nem em nada de produção do oasis.v2.
-#
-# SEGREDOS: não vão no tar. O host lê de ~/tuiu/.env (chmod 600, fora do git).
-#   PORTAL_TRANSPARENCIA_API_KEY   já gravado (do cofre DPAPI, via pipe)
-#   TUIU_WPP_*                     token/phone/WABA/app-secret da Cloud API
-#                                  (do cofre DPAPI, via pipe). Sustentam tanto o
-#                                  aviso da equipe quanto o webhook de entrada.
-#   TUIU_SERIEMA_PROVIDER=cloud_api + TUIU_SERIEMA_CLOUD_DESTINOS
-#                                  quem da equipe recebe o vermelho. Com isto o
-#                                  aviso de cadeia quebrada SAI do host — antes
-#                                  ficava só no journal e a quebra de 22/07
-#                                  passou despercebida.
-#   TUIU_IMAP_*                    ausente de propósito: o elo de inbox só liga
-#                                  quando houver cadastro de operador real.
+# Segredos: continuam em /home/pedro/tuiu/.env (chmod 600); não vão no tar nem na imagem.
 #
 # Uso (da máquina de desenvolvimento):
-#   bash ops/deploy_araticum.sh
+#   bash ops/deploy_araticum.sh                # build + testes + sobe + agendamentos
+#   bash ops/deploy_araticum.sh --sem-testes   # pula o pytest (banco descartável)
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 HOST="${TUIU_HOST:-pedro@10.0.0.42}"
 DESTINO="${TUIU_DESTINO:-/home/pedro/tuiu}"
 
+# O Windows grava CRLF e o Linux engasga no \r (bash, systemd, Dockerfile). O tar sai
+# de uma cópia normalizada, não da árvore de trabalho.
+PALCO=$(mktemp -d)
+trap 'rm -rf "$PALCO"' EXIT
+tar cf - --exclude='__pycache__' --exclude='*.pyc' --exclude='ops/logs' --exclude='ops/sessao' \
+  backend ingest ferramentas ops db testes pytest.ini requirements.txt .dockerignore \
+  | tar xf - -C "$PALCO"
+find "$PALCO" -type f \( -name '*.py' -o -name '*.sh' -o -name '*.yaml' -o -name '*.yml' -o -name '*.ini' \
+  -o -name '*.txt' -o -name '*.sql' -o -name '*.service' -o -name '*.timer' -o -name 'Dockerfile' \
+  -o -name '.dockerignore' -o -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.md' \) \
+  -exec sed -i 's/\r$//' {} +
+
 echo "==> enviando código para ${HOST}:${DESTINO}"
 ssh "$HOST" "mkdir -p ${DESTINO}"
-# pytest.ini VAI JUNTO: sem ele o `python_files = teste_*.py` some, o pytest
-# procura `test_*.py`, não acha nada e sai — a suíte do host parecia verde sem
-# ter executado UM teste sequer (medido 27/07: `pytest -q` = "no tests ran").
-tar czf - backend ingest ferramentas ops db testes pytest.ini 2>/dev/null \
-  | ssh "$HOST" "cd ${DESTINO} && tar xzf - && find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true"
+tar czf - -C "$PALCO" . | ssh "$HOST" "tar xzf - -C ${DESTINO}"
 
-echo "==> preparando ambiente"
-ssh "$HOST" "bash -s" <<REMOTO
-set -euo pipefail
-cd ${DESTINO}
-
-# venv próprio (não mexe no python do sistema nem no do veredas)
-if [ ! -d .venv ]; then
-  python3 -m venv .venv
-fi
-./.venv/bin/pip -q install --upgrade pip
-./.venv/bin/pip -q install "psycopg[binary]" pytest
-# guia: extrai texto do acervo oficial (pymupdf) e embeda local em ONNX (fastembed).
-# Modelo pequeno de propósito — este host roda a produção do veredas.
-./.venv/bin/pip -q install pymupdf fastembed
-
-# Banco: container DEDICADO (não há Postgres nativo no host, e o veredas-db é
-# produção do oasis.v2 — não se encosta).
-docker compose -f ops/compose.db.yaml up -d >/dev/null
-for i in \$(seq 1 20); do
-  docker exec tuiu-db pg_isready -U postgres -d tuiu >/dev/null 2>&1 && break
-  sleep 2
-done
-docker exec tuiu-db pg_isready -U postgres -d tuiu | sed 's/^/  /'
-
-TUIU_DSN="postgresql://postgres@127.0.0.1:25432/tuiu" \\
-  ./.venv/bin/python -c "import sys; sys.path.insert(0,'backend'); from app.db import migrar; print('  migrations:', migrar() or 'nenhuma nova')"
-REMOTO
-
-echo "==> instalando o console (systemd --user, uvicorn em loopback)"
-ssh "$HOST" "bash -s" <<'REMOTO'
-set -euo pipefail
-mkdir -p ~/.config/systemd/user
-./.venv/bin/pip -q install fastapi uvicorn 2>/dev/null || \
-  (cd /home/pedro/tuiu && ./.venv/bin/pip -q install fastapi uvicorn)
-
-cat > ~/.config/systemd/user/tuiu-console.service <<'UNIT'
-[Unit]
-Description=Tuiu - console de operacao (API + telas)
-After=network-online.target
-
-[Service]
-WorkingDirectory=/home/pedro/tuiu
-Environment=TUIU_DSN=postgresql://postgres@127.0.0.1:25432/tuiu
-Environment=PYTHONUTF8=1
-# 127.0.0.1 de proposito: o console mostra dado de 50 organizacoes reais.
-# Publicar para fora (cloudflared) e decisao do dono, nao efeito colateral de deploy.
-ExecStart=/home/pedro/tuiu/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8600
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-UNIT
-
-systemctl --user daemon-reload
-systemctl --user enable tuiu-console.service
-# RESTART, não só enable: uvicorn não recarrega código sozinho. Sem isto o
-# console segue rodando o código de quando subiu — deploy que "passou" mas
-# a mudança não entrou (foi assim com RBAC, contas e base-rates até 20/07).
-systemctl --user restart tuiu-console.service
-sleep 2
-systemctl --user is-active tuiu-console.service | sed 's/^/  console: /'
-curl -s -o /dev/null -w "  /login.html -> %{http_code}\n" http://127.0.0.1:8600/login.html
-curl -s -o /dev/null -w "  /api/cockpit sem sessao -> %{http_code} (tem que ser 401)\n" http://127.0.0.1:8600/api/cockpit
-REMOTO
-
-echo "==> instalando a cadeia diária (systemd --user, 09h30)"
-ssh "$HOST" "bash -s" <<'REMOTO'
-set -euo pipefail
-mkdir -p ~/.config/systemd/user
-
-cat > ~/.config/systemd/user/tuiu-diario.service <<'UNIT'
-[Unit]
-Description=Tuiu - cadeia diaria (ingest, prazos, eventos, notificacao)
-After=network-online.target
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/pedro/tuiu
-Environment=TUIU_DSN=postgresql://postgres@127.0.0.1:25432/tuiu
-Environment=PYTHONUTF8=1
-ExecStart=/home/pedro/tuiu/.venv/bin/python ops/rodar_diario.py
-TimeoutStartSec=7200
-UNIT
-
-cat > ~/.config/systemd/user/tuiu-diario.timer <<'UNIT'
-[Unit]
-Description=Tuiu - dispara a cadeia diaria as 09h30 (apos a carga da API)
-
-[Timer]
-OnCalendar=*-*-* 09:30:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-systemctl --user daemon-reload
-systemctl --user enable --now tuiu-diario.timer
-loginctl enable-linger pedro >/dev/null 2>&1 || true   # roda mesmo sem sessão aberta
-echo "  timer instalado:"
-systemctl --user list-timers tuiu-diario.timer --no-pager | head -3
-REMOTO
-
-echo "==> instalando a sonda de horário de carga (systemd --user; host dorme 02h30-05h30)"
-ssh "$HOST" "bash -s" <<'REMOTO'
-set -euo pipefail
-mkdir -p ~/.config/systemd/user
-
-cat > ~/.config/systemd/user/tuiu-sonda.service <<'UNIT'
-[Unit]
-Description=Tuiu - sonda do horario de carga do Transferegov
-After=network-online.target
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/pedro/tuiu
-Environment=PYTHONUTF8=1
-ExecStart=/home/pedro/tuiu/.venv/bin/python ops/sonda_atualizacao.py
-TimeoutStartSec=300
-UNIT
-
-cat > ~/.config/systemd/user/tuiu-sonda.timer <<'UNIT'
-[Unit]
-Description=Tuiu - sonda o horario de carga (host dorme 02h30-05h30)
-
-[Timer]
-# 🔴 O HOST DESLIGA 02h30-05h30 TODO DIA (box_rest). A primeira versao disto
-# sondava 04h-11h e as batidas de 04h00 a 05h20 simplesmente nao aconteciam —
-# com a ultima do dia anterior as 11h, um flip de madrugada seria "medido" com
-# 18h de incerteza. Numero inutil, entregue sem aviso.
-#
-# Manha fina (a carga conhecida cai ai: detru medido as 08h13):
-OnCalendar=*-*-* 05..11:00/10:00
-# Resto do tempo acordado, grosso: nao mede a hora exata, mas ESTREITA a janela
-# cega. Uma batida as 02h00 dizendo "ainda e ontem" reduz a incerteza de 18h
-# para 3h30 — o maximo que da para saber numa maquina que dorme.
-OnCalendar=*-*-* 00..02,12..23:00/30:00
-# recupera a batida perdida no boot: da uma leitura logo as 05h30
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-systemctl --user daemon-reload
-systemctl --user enable --now tuiu-sonda.timer
-echo "  timer instalado:"
-systemctl --user list-timers tuiu-sonda.timer --no-pager | head -3
-REMOTO
-
-echo "==> pronto. Comandos úteis:"
-echo "   ssh ${HOST} 'systemctl --user list-timers tuiu-diario.timer'"
-echo "   ssh ${HOST} 'systemctl --user start tuiu-diario.service'   # rodar agora"
-echo "   ssh ${HOST} 'journalctl --user -u tuiu-diario -n 50'"
-echo "   ssh ${HOST} 'tail -n 40 ${DESTINO}/ops/logs/diario-\$(date +%F).log'"
-echo "   ssh ${HOST} '${DESTINO}/.venv/bin/python ${DESTINO}/ops/sonda_atualizacao.py --resumo'"
-echo "   ssh ${HOST} '${DESTINO}/.venv/bin/python ${DESTINO}/ferramentas/destinatario.py --listar'"
+echo "==> executando o deploy no host"
+ssh "$HOST" bash "${DESTINO}/ops/deploy_remoto.sh" "$@"
