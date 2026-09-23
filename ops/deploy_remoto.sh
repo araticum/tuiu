@@ -68,6 +68,7 @@ for u in tuiu-console.service tuiu-diario.timer tuiu-diario.service; do
   fi
 done
 systemctl --user daemon-reload
+systemctl --user reset-failed >/dev/null 2>&1 || true   # limpa o "not-found failed" da unit removida
 projeto=$(docker inspect tuiu-db --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)
 if [ -n "$projeto" ] && [ "$projeto" != "tuiu" ]; then
   echo "   tuiu-db era do projeto '$projeto' — recriando no projeto 'tuiu' (mesmo volume ops_tuiu_pgdata)"
