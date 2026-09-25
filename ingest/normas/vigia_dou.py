@@ -44,6 +44,30 @@ from app.db import conectar, migrar  # noqa: E402
 BASE = "https://inlabs.in.gov.br"
 SECOES = ("DO1", "DO1E")   # DO1E = edição extra; a PC 45/2026 saiu numa delas
 
+# Dias em que o DOU não sai por lei federal (Leis 662/1949, 6.802/1980 e 14.759/2023).
+# Ponto facultativo (Carnaval, Corpus Christi…) NÃO entra aqui de propósito: nesses
+# dias a vigília pergunta ao INLABS e só aceita "sem edição" com prova (ver `percorrer`).
+FERIADOS_FIXOS = {(1, 1), (4, 21), (5, 1), (9, 7), (10, 12), (11, 2), (11, 15), (11, 20), (12, 25)}
+
+
+def feriado_nacional(dia: date) -> bool:
+    return (dia.month, dia.day) in FERIADOS_FIXOS
+
+
+class SemEdicao(RuntimeError):
+    """O INLABS devolveu uma página (HTTP 200) em vez do ZIP daquele dia/seção.
+
+    Acontece nos dois casos que importa distinguir: não há edição (feriado, ponto
+    facultativo) OU o servidor está fora do ar respondendo página de erro. Quem decide
+    é `percorrer`, com a prova de um ZIP de dia posterior — nunca esta função sozinha.
+    """
+
+    def __init__(self, dia: date, secao: str, bruto: bytes):
+        self.dia, self.secao, self.tamanho = dia, secao, len(bruto)
+        super().__init__(
+            f"INLABS devolveu {len(bruto)} bytes que não são ZIP para {secao} de {dia} "
+            f"(início: {bruto[:60]!r})")
+
 # Termos em DOIS níveis, por causa de uma medição: na primeira versão, 40 de 45
 # normas vieram casando SÓ "prestação de contas" — expressão que aparece em
 # qualquer portaria. Vigília com 40 itens por dia para triar é vigília que
@@ -162,7 +186,8 @@ CABECALHO = re.compile(
     r"[^.]{0,90}?N[ºo°]?\s*[\d.]+[^.]{0,70}?\d{4})", re.I)
 
 
-def artigos_do_dia(op, dia: date, secao: str):
+def _baixar_zip(op, dia: date, secao: str) -> bytes | None:
+    """ZIP da seção do dia; None se a seção não existe (404); SemEdicao se veio página."""
     url = f"{BASE}/index.php?p={dia.isoformat()}&dl={dia.isoformat()}-{secao}.zip"
     try:
         with op.open(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}),
@@ -170,25 +195,44 @@ def artigos_do_dia(op, dia: date, secao: str):
             bruto = r.read()
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return          # seção não existe nesse dia (extra nem sempre sai)
+            return None     # seção não existe nesse dia (extra nem sempre sai)
         raise RuntimeError(f"INLABS respondeu HTTP {e.code} para {secao} de {dia}") from e
     if not bruto.startswith(b"PK"):
-        # Servidor fora do ar devolve página de erro com HTTP 200. Tratar isso
-        # como "nada encontrado" faria a vigília dizer "0 normas" num dia em que
-        # ela simplesmente não olhou — silêncio indistinguível de sossego.
-        raise RuntimeError(
-            f"INLABS devolveu {len(bruto)} bytes que não são ZIP para {secao} de {dia} "
-            f"(início: {bruto[:60]!r}) — fonte instável, NÃO é 'nenhuma norma'")
+        # Servidor fora do ar devolve página de erro com HTTP 200 — e feriado também
+        # (07/09/2026 travou a vigília por isso). Tratar como "nada encontrado" faria
+        # a vigília dizer "0 normas" num dia em que ela não olhou — silêncio
+        # indistinguível de sossego. Quem desempata é `percorrer`.
+        raise SemEdicao(dia, secao, bruto)
+    return bruto
+
+
+def _artigos_do_zip(bruto: bytes):
     z = zipfile.ZipFile(io.BytesIO(bruto))
     for nome in z.namelist():
         if nome.endswith(".xml"):
             yield nome, _texto(z.read(nome).decode("utf-8", "replace"))
 
 
-def varrer(op, dia: date) -> list[dict]:
-    achados = []
+def artigos_do_dia(op, dia: date, secao: str):
+    bruto = _baixar_zip(op, dia, secao)
+    if bruto is not None:
+        yield from _artigos_do_zip(bruto)
+
+
+def varrer(op, dia: date) -> tuple[list[dict], int, list[SemEdicao]]:
+    """(achados, ZIPs lidos, seções que vieram como página em vez de ZIP)."""
+    achados: list[dict] = []
+    zips, faltas = 0, []
     for secao in SECOES:
-        for nome, texto in artigos_do_dia(op, dia, secao):
+        try:
+            bruto = _baixar_zip(op, dia, secao)
+        except SemEdicao as e:
+            faltas.append(e)
+            continue
+        if bruto is None:
+            continue
+        zips += 1
+        for nome, texto in _artigos_do_zip(bruto):
             plano = _plano(texto)
             casou = [rotulo for rotulo, padrao in TERMOS.items()
                      if re.search(padrao, plano, re.I)]
@@ -208,7 +252,7 @@ def varrer(op, dia: date) -> list[dict]:
                 "ementa": (_tag(texto, "Ementa") or _plano(plano[:400]))[:600] or None,
                 "termos": casou, "arquivo": nome,
             })
-    return achados
+    return achados, zips, faltas
 
 
 def gravar(achados: list[dict]) -> list[dict]:
@@ -224,6 +268,43 @@ def gravar(achados: list[dict]) -> list[dict]:
                 novos.append(a)
         con.commit()
     return novos
+
+
+def percorrer(op, dias: list[date]) -> dict:
+    """Varre os dias em ordem e diz até onde o marcador pode avançar.
+
+    Página em vez de ZIP só vale como "sem edição" quando um ZIP de dia POSTERIOR (ou da
+    outra seção do mesmo dia) prova que o INLABS estava de pé. Sem essa prova o dia fica
+    PENDENTE: o marcador não passa dele e amanhã a vigília tenta de novo. Se nenhum ZIP
+    veio e houve página, é fonte instável — erro, para o elo aparecer vermelho.
+    """
+    novos: list[dict] = []
+    faltas: list[SemEdicao] = []
+    ultimo_zip: date | None = None
+    zips_total = 0
+    for dia in dias:
+        if dia.weekday() >= 5:      # DOU não sai sábado/domingo (extra é raro)
+            continue
+        if feriado_nacional(dia):
+            print(f"  {dia}: feriado nacional, DOU não sai", flush=True)
+            continue
+        achados, zips, faltas_dia = varrer(op, dia)
+        zips_total += zips
+        if zips:
+            ultimo_zip = dia
+        faltas += faltas_dia
+        novos_dia = gravar(achados)
+        novos += novos_dia
+        aviso = f" — página em vez de ZIP: {', '.join(e.secao for e in faltas_dia)}" if faltas_dia else ""
+        print(f"  {dia}: {len(achados)} relevante(s), {len(novos_dia)} novo(s){aviso}", flush=True)
+    if faltas and zips_total == 0:
+        raise RuntimeError(
+            f"INLABS devolveu página em vez de ZIP em todas as {len(faltas)} tentativas "
+            f"({faltas[0]}) — fonte instável, NÃO é 'nenhuma norma'; o marcador não avança")
+    pendentes = [e for e in faltas if ultimo_zip is None or e.dia > ultimo_zip]
+    sem_edicao = [e for e in faltas if e not in pendentes]
+    ate = max(dias) if not pendentes else ultimo_zip
+    return {"novos": novos, "ate": ate, "sem_edicao": sem_edicao, "pendentes": pendentes}
 
 
 def main():
@@ -262,20 +343,20 @@ def main():
                   flush=True)
 
     op = entrar()
-    todos_novos = []
-    for dia in dias:
-        if dia.weekday() >= 5:      # DOU não sai sábado/domingo (extra é raro)
-            continue
-        achados = varrer(op, dia)
-        novos = gravar(achados)
-        todos_novos += novos
-        print(f"  {dia}: {len(achados)} relevante(s), {len(novos)} novo(s)", flush=True)
+    r = percorrer(op, dias)
+    todos_novos = r["novos"]
+    if r["sem_edicao"]:
+        print("  sem edição (INLABS de pé, provado por ZIP posterior): "
+              + ", ".join(f"{e.dia} {e.secao}" for e in r["sem_edicao"]), flush=True)
+    if r["pendentes"]:
+        print("  PENDENTE, sem prova de que o INLABS estava de pé — refaz amanhã: "
+              + ", ".join(f"{e.dia} {e.secao}" for e in r["pendentes"]), flush=True)
 
     with conectar() as con:
         con.execute(
             "INSERT INTO vigia_marcador (fonte, ate) VALUES ('DOU', %s)"
             " ON CONFLICT (fonte) DO UPDATE SET ate=GREATEST(vigia_marcador.ate, EXCLUDED.ate),"
-            " atualizado_em=now()", (max(dias),))
+            " atualizado_em=now()", (r["ate"],))
         pendentes = con.execute("SELECT count(*) FROM normas_vistas WHERE NOT tratada").fetchone()[0]
         con.commit()
 
