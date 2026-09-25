@@ -70,8 +70,10 @@ no boot das 05:30.
 
 ## Rollback
 
-O corte guardou as units antigas em `~/tuiu-systemd-aposentado-<data>/` e o venv
-`/home/pedro/tuiu/.venv` ainda existe. Voltar: `docker compose -f ops/compose.yaml stop
-console`, copiar as units de volta para `~/.config/systemd/user/`, `systemctl --user
-daemon-reload && systemctl --user enable --now tuiu-console.service tuiu-diario.timer`, e
-desabilitar o evento `tuiu_diario` no xyOps. O banco é o mesmo volume nos dois modelos.
+O venv e as units antigas foram apagados do host em 25/09/2026 (dono), depois de a cadeia
+rodar verde pelo xyOps. Voltar ao modelo antigo hoje é reconstruir: as units e o deploy por
+venv estão no git, em `ops/deploy_araticum.sh` **antes** do commit `4d9c899` (`git show
+4d9c899^:ops/deploy_araticum.sh`). O banco é o mesmo volume nos dois modelos, então nenhum
+dado depende disso. Para um deploy que quebrou, o caminho curto é `docker compose -f
+ops/compose.yaml up -d` com a imagem anterior (`docker image ls tuiu-app`) ou refazer o deploy
+a partir do commit anterior.
