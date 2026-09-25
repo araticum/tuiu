@@ -299,8 +299,9 @@ def main():
     cache = RAIZ / "data" / "radar" / "cache"
     planos, beneficiarios = [], {}
     if not args.sem_especiais:
-        planos = _carregar_rota_g2("planos_acao_especiais", cache)
-        for b in _carregar_rota_g2("beneficiarios_especiais", cache):
+        # rotas com hífen desde ~28/08/2026 (a API /especiais trocou `_` por `-`)
+        planos = _carregar_rota_g2("planos-acao-especiais", cache)
+        for b in _carregar_rota_g2("beneficiarios-especiais", cache):
             bid = _campo(b, ("id", "beneficiario"))
             if bid is not None:
                 beneficiarios[bid] = {
