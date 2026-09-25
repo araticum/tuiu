@@ -30,6 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from recorte_ente import monitorados  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(RAIZ / "backend"))
+from app.texto_br import qtd, verbo  # noqa: E402
 CACHE = RAIZ / "data" / "detru" / "cache"
 HISTORICO_ZIP = "siconv_historico_situacao.zip"
 
@@ -159,9 +161,15 @@ def recortar(cnpjs: set[str], base_out: Path) -> dict[str, dict]:
             "contratos_repasse_ativos": len(repasse_ativos),
             "prest_contas_vencidas": sum(1 for l, *_ in prest_vencendo if l < hoje),
         }
+        # razão social CRUA aqui de propósito: esta linha relata o que a
+        # plataforma entregou, e é o rastro de auditoria contra o que a tela
+        # mostra depois de `razao_social.exibir`. Corrigir os dois lados
+        # apagaria a comparação que justifica corrigir só a exibição.
+        rep, venc = len(repasse_ativos), resultados[cnpj]["prest_contas_vencidas"]
         print(f"  {rotulos.get(cnpj, cnpj)}: {len(meus_convs)} instrumentos "
-              f"({len(ativos)} ativos, {len(repasse_ativos)} contrato(s) de repasse ativo(s), "
-              f"{resultados[cnpj]['prest_contas_vencidas']} prestação(ões) vencida(s))", flush=True)
+              f"({len(ativos)} {verbo(len(ativos), 'ativo', 'ativos')}, "
+              f"{qtd(rep, 'contrato de repasse ativo', 'contratos de repasse ativos')}, "
+              f"{qtd(venc, 'prestação vencida', 'prestações vencidas')})", flush=True)
     return resultados
 
 

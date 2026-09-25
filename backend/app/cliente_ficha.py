@@ -342,11 +342,39 @@ def anotar(doc: str, texto: str, tipo: str = "nota", autor: str | None = None,
     return {"ok": True, "id": r[0]}
 
 
+def mascarar_cpf(bruto: str) -> str:
+    """`12379071812` -> `***790718**`. Máscara já mascarada volta igual.
+
+    É o formato da Receita, e é o único que este produto pode guardar:
+    `PRIVACY.md` declara, para o titular e para o fiscal, que "o CPF completo
+    **não temos**". A via automática (`ferramentas/dirigentes.py:64-66`) sempre
+    respeitou — as 84 linhas em produção estão todas mascaradas.
+
+    Máscara aqui e não recusa: o operador que tem o documento completo na mão
+    copia o que tem, e uma tela que responde "CPF deve ter 11 dígitos" ensina a
+    digitar o número inteiro. Aceitar e reduzir na entrada é a única forma que
+    não depende da disciplina de quem digita.
+    """
+    d = "".join(c for c in (bruto or "") if c.isdigit())
+    if "*" in (bruto or "") and len(d) == 6:
+        return bruto.strip()                       # já veio no formato da casa
+    if len(d) == 11:
+        return f"***{d[3:9]}**"
+    if len(d) == 6:
+        return f"***{d}**"
+    return ""
+
+
 def cadastrar_pessoa(doc: str, cpf: str, nome: str, papel: str | None = None) -> dict:
     doc = "".join(c for c in doc if c.isdigit())
-    cpf_d = "".join(c for c in cpf if c.isdigit())
-    if len(cpf_d) != 11:
-        return {"ok": False, "erro": "CPF deve ter 11 dígitos"}
+    # A versão anterior EXIGIA 11 dígitos e gravava o número inteiro — o oposto
+    # exato do que o PRIVACY.md promete, e ela ainda recusava o mascarado, que a
+    # outra via do mesmo produto grava. Duas vias, dois formatos incompatíveis na
+    # mesma coluna. Nunca chegou a gravar nada: as 84 linhas vieram da via
+    # automática. Era rota carregada e não disparada.
+    cpf_d = mascarar_cpf(cpf)
+    if not cpf_d:
+        return {"ok": False, "erro": "informe o CPF (11 dígitos) ou o mascarado (***123456**)"}
     with conectar() as con:
         con.execute(
             "INSERT INTO clientes_pessoas (doc_cliente, cpf, nome, papel) VALUES (%s,%s,%s,%s)"

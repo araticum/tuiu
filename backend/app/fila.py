@@ -41,6 +41,11 @@ PROXIMO_PASSO = {
     # o prazo estourado aqui e do ORGAO — a acao e cobrar, nao produzir
     "analise_parada_concedente": "Cobrar decisão do concedente (art. 97) sobre as prestações paradas",
     "proposta_rejeitada": "Ler o parecer do órgão e decidir: corrigir e reapresentar, ou encerrar",
+    # marco `ok` — a prestação está entregue e a bola é do órgão. Não aparecia na
+    # fila (que só lê farol<>'ok'), mas ENTRA na mensagem de andamento, e sem
+    # esta linha o alerta dizia "Próximo passo: Analisar" para quem não tem nada
+    # a fazer. Nada a produzir aqui: o passo é vigiar o relógio do art. 97.
+    "prestacao_em_analise": "Nada a enviar — acompanhar a análise e cobrar o órgão se passar de 60 dias (art. 97)",
 }
 
 
@@ -200,3 +205,46 @@ def triar(chave: str, status: str, nota: str | None = None, operador: str | None
             (chave, status, nota, operador))
         con.commit()
     return {"ok": True, "chave": chave, "status": status}
+
+
+def responsaveis() -> list[dict]:
+    """Quem pode receber item: **operador** ativo, e mais ninguém.
+
+    Duas travas em série, e as duas custaram para aparecer:
+
+    - texto livre criaria dono fantasma — item que parece coberto e não está é
+      pior que item sem dono, porque ninguém procura por ele;
+    - `ativo` sozinho NÃO basta. A primeira versão filtrava só por isso e
+      oferecia a conta `usuario`, que é papel `leitor` — read-only, usada como
+      login de demonstração de 8 IPs distintos. Atribuir tarefa a quem não pode
+      executá-la é a mesma fantasma com crachá.
+    """
+    with conectar() as con:
+        return [{"login": lg, "nome": nm} for lg, nm in con.execute(
+            "SELECT login, nome FROM usuarios WHERE ativo AND papel = 'operador'"
+            " ORDER BY nome")]
+
+
+def atribuir(chave: str, responsavel: str | None, quem: str | None = None) -> dict:
+    """Diz DE QUEM é o item. `responsavel=None` devolve para a mesa.
+
+    Não encosta em `status`: atribuir não é começar a trabalhar. Marcar
+    `em_andamento` aqui mentiria sobre o andamento de tudo que foi só
+    distribuído — e a mesa perderia a distinção entre "tem dono" e "está
+    andando", que é justamente o que se quer enxergar.
+    """
+    if not chave:
+        return {"ok": False, "erro": "chave ausente"}
+    if responsavel:
+        validos = {r["login"] for r in responsaveis()}
+        if responsavel not in validos:
+            return {"ok": False, "erro": f"'{responsavel}' não é usuário ativo do console"}
+    with conectar() as con:
+        con.execute(
+            "INSERT INTO fila_status (chave, responsavel, atribuido_em, atribuido_por)"
+            " VALUES (%s,%s,now(),%s)"
+            " ON CONFLICT (chave) DO UPDATE SET responsavel=EXCLUDED.responsavel,"
+            " atribuido_em=now(), atribuido_por=EXCLUDED.atribuido_por",
+            (chave, responsavel, quem))
+        con.commit()
+    return {"ok": True, "chave": chave, "responsavel": responsavel}

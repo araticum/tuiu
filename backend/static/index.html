@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Cockpit</title>
 <style>
@@ -89,7 +90,7 @@ fetch("/api/verificacao").then(r=>r.json()).then(v=>{
   if(!v.disponivel){ el.textContent = ""; return; }
   const r = v.resumo||{};
   const ok = (r.divergem||0)===0 && v.snapshot_fresco;
-  el.textContent = ok ? `✓ confere com a g2 (${r.conferem})` : `⚠ ${r.divergem} divergência(s)`;
+  el.textContent = ok ? `✓ confere com a g2 (${r.conferem})` : `⚠ ${qtd(r.divergem, "divergência", "divergências")}`;
   el.style.color = ok ? "var(--ok)" : "var(--at)";
 }).catch(()=>{});
 
@@ -138,7 +139,7 @@ fetch("/api/cockpit").then(r=>r.json()).then(c=>{
   document.getElementById("entes").innerHTML =
     (pend.length ? `<div class="entes-lista">${pend.map(linha).join("")}</div>`
                  : `<div class="vazio">Nenhum ente com pendência sua. 🎉</div>`)
-    + (dia.length ? `<div class="toggle-dia" onclick="var n=this.nextElementSibling;var v=n.style.display==='none';n.style.display=v?'flex':'none';this.textContent=(v?'▾ ':'▸ ')+${dia.length}+' ente(s) em dia'">▸ ${dia.length} ente(s) em dia</div>`
+    + (dia.length ? `<div class="toggle-dia" onclick="var n=this.nextElementSibling;var v=n.style.display==='none';n.style.display=v?'flex':'none';this.textContent=(v?'▾ ':'▸ ')+qtd(${dia.length}, 'ente', 'entes')+' em dia'">▸ ${qtd(dia.length, "ente", "entes")} em dia</div>`
        + `<div class="entes-lista" style="display:none;margin-top:6px;opacity:.62">${dia.map(linha).join("")}</div>` : "");
 });
 </script>

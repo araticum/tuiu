@@ -18,7 +18,11 @@ import json
 from datetime import date
 
 from app.carteira import ROTULOS, snapshot_mais_recente
+# a peça vai para um ÓRGÃO: enum cru do CSV ('PRESTACAO_CONTAS_ENVIADA_ANALISE')
+# num ofício é desleixo que o leitor atribui ao remetente
+from app.cliente_ficha import _humaniza
 from app.db import conectar
+from app.texto_br import qtd
 
 _MESES = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
           "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -130,10 +134,11 @@ def montar_cobranca(cli: dict, doc: str, id_proposta, det: dict, prop: dict, hoj
         f"1. A {cli['nome']}, inscrita no CNPJ sob o nº {_cnpj_fmt(doc)}, apresentou a "
         f"Proposta nº {id_proposta}, cujo objeto é \"{objeto}\", encaminhada para análise "
         f"em {envio}.\n\n"
-        f"2. Decorridos {dias} dias do envio, a proposta permanece sem decisão. Nos termos "
+        f"2. Decorridos {qtd(dias, 'dia', 'dias')} do envio, a proposta permanece sem "
+        f"decisão. Nos termos "
         f"do art. 97, inciso I, e §1º, da Portaria Conjunta nº 33/2023, o prazo para análise "
         f"pelo concedente, no processamento informatizado, é de {limite} (sessenta) dias — "
-        f"encontrando-se, portanto, **vencido há {venc} dias**."
+        f"encontrando-se, portanto, **vencido há {qtd(venc, 'dia', 'dias')}**."
         f"{nota_parecer}\n\n"
         f"{'4' if up else '3'}. Diante do exposto, requer-se a conclusão da análise da "
         "proposta no menor prazo possível, ou, subsidiariamente, a informação motivada sobre "
@@ -199,4 +204,107 @@ def resposta_diligencia(doc: str, id_proposta, hoje: date | None = None) -> dict
             "markdown": md}
 
 
-GERADORES = {"cobranca-art97": cobranca_art97, "resposta-diligencia": resposta_diligencia}
+def montar_cobranca_analise(cli: dict, doc: str, det: dict, hoje: date) -> str:
+    """Composição PURA da cobrança do art. 97 no caso LEGADO (testável sem banco).
+
+    Peça irmã da `montar_cobranca`, não a mesma: lá o marco é POR PROPOSTA do
+    ciclo novo (`dias_em_analise`); aqui é um agregado por cliente — o motor
+    junta todas as prestações paradas do convenente num marco só, com as piores
+    em `piores[]`. Um ofício por prestação seria uma pilha de cartas idênticas
+    para o mesmo órgão; uma carta que lista todas é o que se manda de verdade.
+    """
+    piores = det.get("piores") or []
+    limite = det.get("limite_dias")
+    total = det.get("total") or len(piores)
+    linhas = "\n".join(
+        f"| {p.get('instrumento')} | {_humaniza(p.get('situacao')) or '—'} | "
+        f"{_iso_br(p.get('desde'))} | {p.get('dias')} |"
+        for p in piores[:10])
+    resto = (f"\n\n_(...e outras {total - len(piores[:10])} prestações na mesma situação.)_"
+             if total > len(piores[:10]) else "")
+    return (
+        f"**{cli['nome']}**  \n"
+        f"CNPJ nº {_cnpj_fmt(doc)}\n\n"
+        f"**Ofício — cobrança de análise de prestação de contas (art. 97)**\n\n"
+        f"Ao órgão concedente,\n\n"
+        f"A {cli['nome']} apresentou as prestações de contas relacionadas abaixo, que "
+        f"permanecem **aguardando análise** do concedente por prazo superior ao previsto "
+        f"no art. 97 da Portaria Conjunta 33/2023 "
+        f"({limite} dias para a análise convencional):\n\n"
+        f"| Instrumento | Situação | Desde | Dias parados |\n"
+        f"|---|---|---|---:|\n{linhas}{resto}\n\n"
+        f"São **{total}** prestação(ões) nessa condição. Como o prazo de análise é do "
+        f"concedente e já está vencido, o atraso não é imputável a esta entidade — o que "
+        f"afasta os efeitos de inadimplência dele decorrentes.\n\n"
+        f"Requer-se, assim, a conclusão da análise, ou a informação do prazo em que se dará, "
+        f"nos termos do art. 97, I e § 1º."
+        f"{_assinatura(cli, hoje)}\n")
+
+
+def cobranca_analise(doc: str, id_proposta=None, hoje: date | None = None) -> dict:
+    """Cobrança do art. 97 sobre as prestações paradas no concedente (legado).
+
+    `id_proposta` é ignorado de propósito: o marco é do CLIENTE, não de um
+    instrumento — a assinatura fica igual à das outras para caber no GERADORES.
+    """
+    hoje = hoje or date.today()
+    doc = "".join(c for c in doc if c.isdigit())
+    with conectar() as con:
+        r = con.execute(
+            "SELECT detalhes FROM marcos WHERE cnpj=%s AND tipo='analise_parada_concedente'"
+            " AND farol <> 'ok' LIMIT 1", (doc,)).fetchone()
+        if not r:
+            return {"disponivel": False,
+                    "erro": "não há prestação parada no concedente para este cliente"}
+        det = r[0] if isinstance(r[0], dict) else json.loads(r[0] or "{}")
+        cli = _cliente(con, doc)
+    return {"disponivel": True,
+            "titulo": f"Cobrança art. 97 — {det.get('total')} prestação(ões) parada(s)",
+            "markdown": montar_cobranca_analise(cli, doc, det, hoje)}
+
+
+def conferencia_parcela(doc: str, id_item, hoje: date | None = None) -> dict:
+    """A parcela saiu? Conferida contra o extrato (ver app.conferencia)."""
+    from app.conferencia import markdown
+    return markdown(doc, id_item)
+
+
+GERADORES = {"cobranca-art97": cobranca_art97, "resposta-diligencia": resposta_diligencia,
+             "cobranca-analise": cobranca_analise, "conferencia-parcela": conferencia_parcela}
+
+# Qual peça serve cada marco. É o mapa que a triagem consulta para dizer
+# "minuta pronta" em vez de só "responda a diligência" — o operador chega no
+# rascunho, não na tarefa em branco.
+PECA_POR_MARCO = {
+    "proposta_parada": ("cobranca-art97", "Ofício de cobrança (art. 97)"),
+    "analise_parada_concedente": ("cobranca-analise", "Ofício de cobrança (art. 97)"),
+    "complementacao_pendente": ("resposta-diligencia", "Resposta à diligência"),
+    # prestação de contas não é ofício: a peça é o CHECKLIST do dossiê, que diz
+    # documento a documento o que falta juntar (db/0024)
+    "prestacao_contas": ("dossie", "Checklist do dossiê"),
+    # a parcela não pede ofício: pede CONFERIR se o dinheiro entrou. O documento
+    # é o extrato da conta da parceria — os outros elos da cadeia (NE, DH, OP)
+    # estão vazios no recorte, e conferir o que não existe seria teatro.
+    "parcela_prevista": ("conferencia-parcela", "Conferência de parcela"),
+}
+
+
+def peca_de(tipo_marco: str, cnpj: str, instrumento, console_url: str) -> dict | None:
+    """Onde está a peça pronta deste item — ou None quando não há."""
+    achado = PECA_POR_MARCO.get(tipo_marco)
+    if not achado:
+        return None
+    chave, titulo = achado
+    if chave == "dossie":
+        # MESA, não ficha do cliente: o checklist do dossiê só existe aqui (o
+        # chip e o modal). `cliente.html` não tem uma linha de dossiê — o link
+        # levava 79% dos itens para uma página sem a peça.
+        # `&instrumento` estreita para a transferência do item: a mesa do
+        # cliente pode ter dezenas de linhas, e o alerta prometia a mesa DAQUELA
+        # transferência. `mesa.html` degrada sozinha se o instrumento já saiu.
+        url = f"{console_url}/mesa.html?cliente={cnpj}"
+        if instrumento:
+            url += f"&instrumento={instrumento}"
+    else:
+        url = f"{console_url}/api/minuta/{cnpj}?tipo={chave}&proposta={instrumento or '-'}"
+    return {"tipo": chave, "titulo": titulo, "url": url}

@@ -194,7 +194,7 @@ proposta, não catálogo.
 do art. 75, II da Lei 14.133 — município R$ 990–2.490/mês por faixa populacional, OSC R$ 390–690/mês,
 piloto de 90 dias.)*
 
-**Motor comercial interno** (decisão do dono 18/07, pós-benchmark do "Hub da PROJETUS"): a prospecção
+**Motor comercial interno** (decisão do dono 18/07, pós-benchmark de um hub concorrente): a prospecção
 por dados vive FORA do produto, como ferramenta interna — `ferramentas/radar_comercial.py` cruza o dump
 diário de parcerias (propostas, indicações de emenda) com os planos de ação Pix (g2 `/especiais`, com
 cache diário) e ranqueia entes por **dor + dinheiro em trânsito**: impedimento Pix com motivo citável

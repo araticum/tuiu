@@ -71,8 +71,11 @@ def _get_json(url: str) -> dict:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 return json.load(resp)
         except urllib.error.HTTPError as exc:
-            # 4xx (exceto 429) é erro de chamada — não adianta repetir
+            # 4xx (exceto 429) é erro de chamada — não adianta repetir. A URL vai na
+            # mensagem: "HTTP Error 404: Not Found" sozinho escondeu por 27 dias QUAL
+            # rota a API tinha renomeado (28/08/2026).
             if exc.code not in (429, 500, 502, 503, 504):
+                exc.msg = f"{exc.msg} — {url}"
                 raise
             ultima_exc = exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as exc:

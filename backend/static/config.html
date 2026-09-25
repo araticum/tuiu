@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Configurações</title>
 <style>
@@ -68,6 +69,7 @@
 <div class="tabs">
   <button class="on" data-p="situacoes" onclick="aba('situacoes')">Situações</button>
   <button data-p="acoes" onclick="aba('acoes')">Ações (próximo passo)</button>
+  <button data-p="distribuicao" onclick="aba('distribuicao')">Distribuição da fila</button>
 </div>
 
 <!-- ============================ SITUAÇÕES ============================ -->
@@ -114,6 +116,46 @@
   </div>
 </div>
 
+<!-- ========================== DISTRIBUIÇÃO ========================== -->
+<div class="painel" id="p-distribuicao">
+  <div class="card">
+    <h2>Cota de cada operador</h2>
+    <div class="h-sub">A porcentagem reparte <b>o lote sem dono</b>, não a carteira inteira.
+      Quem já tem item na mão não é mexido — tirar trabalho de quem já começou é outra decisão.
+      A soma precisa fechar 100%.</div>
+    <table><thead><tr><th>Operador</th><th style="width:110px">Já tem</th>
+      <th style="width:130px">Cota (%)</th><th style="width:120px">Receberia</th></tr></thead>
+      <tbody id="cotas"><tr><td colspan="4" class="dim">carregando…</td></tr></tbody></table>
+    <div class="form-linha">
+      <span id="somaMsg" class="dim"></span>
+      <button class="acao" onclick="salvarCotas()">salvar cotas</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Distribuir o que está sem dono</h2>
+    <div class="h-sub" id="semDonoMsg">carregando…</div>
+    <div class="form-linha">
+      <label style="display:flex;gap:7px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="agrupar" checked>
+        manter os itens de um mesmo cliente com a mesma pessoa
+      </label>
+    </div>
+    <div class="h-sub">Agrupado, o percentual é respeitado tão de perto quanto os tamanhos de
+      cliente permitem, e o desvio aparece na coluna <b>diferença</b>. Sem agrupar, a cota fecha
+      exata e várias pessoas passam a atender o mesmo cliente.</div>
+    <div class="form-linha">
+      <button class="acao" onclick="simular()">simular</button>
+      <button class="acao" id="btnAplicarDist" onclick="aplicarDist()" disabled>aplicar</button>
+      <span id="distMsg" class="dim">simule antes de aplicar.</span>
+    </div>
+    <table id="tabPlano" style="display:none"><thead><tr><th>Operador</th>
+      <th style="width:90px">Alvo</th><th style="width:90px">Recebe</th>
+      <th style="width:110px">Diferença</th></tr></thead>
+      <tbody id="plano"></tbody></table>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -124,7 +166,10 @@ function toast(msg, erro){ const t=document.getElementById("toast"); t.textConte
   t.style.borderColor = erro?"var(--ruim)":"var(--acento)"; t.style.display="block";
   clearTimeout(toastT); toastT=setTimeout(()=>t.style.display="none", 2600); }
 function aba(p){ document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.p===p));
-  document.querySelectorAll(".painel").forEach(x=>x.classList.toggle("on",x.id==="p-"+p)); }
+  document.querySelectorAll(".painel").forEach(x=>x.classList.toggle("on",x.id==="p-"+p));
+  // a distribuição lê carga e itens sem dono, que mudam a cada rodada do motor:
+  // carregar na abertura da aba evita mostrar quadro velho e distribuir por ele
+  if(p === "distribuicao") carregarDistribuicao(); }
 
 async function jget(u){ const r=await fetch(u); return r.json(); }
 async function jpost(u, body){ const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -211,6 +256,103 @@ async function reprocessar(){
 }
 
 carregarVocab(); carregarRegras(); carregarAcoes();
+// ------------------------------------------------------------ distribuição
+let COTAS = [], SIMULADO = null;
+
+function somaCotas(){
+  return Array.from(document.querySelectorAll("#cotas input.pct"))
+    .reduce((t, el) => t + (parseFloat(el.value) || 0), 0);
+}
+
+function pintarSoma(){
+  const s = somaCotas(), ok = Math.abs(s - 100) < 0.01 || s < 0.01;
+  const el = document.getElementById("somaMsg");
+  el.textContent = `soma: ${s.toFixed(2)}%` + (ok ? "" : " — precisa fechar 100%");
+  el.style.color = ok ? "var(--dim)" : "var(--ruim)";
+  // cota mudou: o plano na tela virou passado, e aplicar um plano velho
+  // distribuiria por uma regra que ninguém mais está vendo
+  SIMULADO = null;
+  document.getElementById("btnAplicarDist").disabled = true;
+}
+
+async function carregarDistribuicao(){
+  const d = await fetch("/api/config/distribuicao").then(r => r.json());
+  COTAS = d.cotas || [];
+  document.getElementById("semDonoMsg").innerHTML = d.sem_dono
+    ? `<b>${qtd(d.sem_dono, "item acionável", "itens acionáveis")}</b> sem dono na mesa.`
+    : "Nenhum item acionável sem dono — nada a distribuir agora.";
+  document.getElementById("cotas").innerHTML = COTAS.length ? COTAS.map(c => `
+    <tr><td>${esc(c.nome)} <span class="dim">${esc(c.login)}</span></td>
+      <td>${qtd(c.carga_atual, "item", "itens")}</td>
+      <td><input class="pct" data-login="${esc(c.login)}" type="number" min="0" max="100"
+           step="0.5" value="${c.percentual}" oninput="pintarSoma()" style="width:90px"></td>
+      <td class="dim" id="prev-${esc(c.login)}">—</td></tr>`).join("")
+    : `<tr><td colspan="4" class="dim">Nenhum operador ativo no console.
+        Cadastre em <b>Usuários</b> antes de distribuir.</td></tr>`;
+  pintarSoma();
+}
+
+async function salvarCotas(){
+  const cotas = {};
+  document.querySelectorAll("#cotas input.pct").forEach(el => {
+    cotas[el.dataset.login] = parseFloat(el.value) || 0;
+  });
+  const r = await fetch("/api/config/distribuicao/cotas", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({cotas})}).then(r=>r.json());
+  if(!r.ok){ toast(r.erro || "não salvou", true); return; }
+  toast("cotas salvas");
+  carregarDistribuicao();
+}
+
+function corpoDist(){
+  return JSON.stringify({agrupar_por_cliente: document.getElementById("agrupar").checked});
+}
+
+async function simular(){
+  const r = await fetch("/api/config/distribuicao/simular", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:corpoDist()}).then(r=>r.json());
+  const tab = document.getElementById("tabPlano");
+  if(!r.ok){ toast(r.erro || "não deu para simular", true); tab.style.display="none"; return; }
+  if(!r.itens_sem_dono){ toast(r.aviso || "nada a distribuir"); tab.style.display="none"; return; }
+  const nome = {}; COTAS.forEach(c => nome[c.login] = c.nome);
+  document.getElementById("plano").innerHTML = (r.desvio || []).map(x => {
+    const d = x.diferenca;
+    const cor = d === 0 ? "var(--ok)" : (Math.abs(d) > 2 ? "var(--at)" : "var(--dim)");
+    return `<tr><td>${esc(nome[x.login] || x.login)}</td><td>${x.alvo}</td>
+      <td><b>${x.recebe}</b></td>
+      <td style="color:${cor}">${d > 0 ? "+" : ""}${d}</td></tr>`;
+  }).join("");
+  (r.desvio || []).forEach(x => {
+    const el = document.getElementById("prev-" + x.login);
+    if(el) el.textContent = qtd(x.recebe, "item", "itens");
+  });
+  tab.style.display = "";
+  SIMULADO = r;
+  document.getElementById("btnAplicarDist").disabled = false;
+  document.getElementById("distMsg").textContent =
+    `${qtd(r.itens_sem_dono, "item seria distribuído", "itens seriam distribuídos")}. Confira antes de aplicar.`;
+}
+
+async function aplicarDist(){
+  if(!SIMULADO){ toast("simule antes", true); return; }
+  const n = SIMULADO.itens_sem_dono;
+  if(!confirm(`Distribuir ${n} ${n === 1 ? "item" : "itens"} entre os operadores?
+
+`
+      + `Cada um vira tarefa de uma pessoa. Devolver é item a item, na mesa.`)) return;
+  const b = document.getElementById("btnAplicarDist");
+  b.disabled = true; b.textContent = "distribuindo…";
+  const r = await fetch("/api/config/distribuicao/aplicar", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:corpoDist()}).then(r=>r.json());
+  b.textContent = "aplicar";
+  if(!r.ok){ toast(r.erro || "não distribuiu", true); return; }
+  toast(`${qtd(r.distribuidos, "item distribuído", "itens distribuídos")}`);
+  if((r.erros || []).length) toast(`${qtd(r.erros.length, "item falhou", "itens falharam")}`, true);
+  SIMULADO = null;
+  document.getElementById("tabPlano").style.display = "none";
+  carregarDistribuicao();
+}
+
 </script>
 <script src="/nav.js" defer></script>
 </body>

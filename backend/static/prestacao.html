@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/tema.js"></script>
+<script src="/br.js"></script>
 <link rel="stylesheet" href="/tuiu-cartorio.css">
 <title>Tuiú · Prestação de contas</title>
 <style>
@@ -59,7 +60,7 @@ function carregar(cnpj){
     const el=document.getElementById("pix");
     if(!d.pendentes){ el.innerHTML=`<div class="inst">Nenhum plano 2020–2024 sem relatório de gestão. ✓</div>`; return; }
     el.innerHTML = `<div class="inst">
-      <h3><span class="alerta">${d.pendentes} plano(s) sem Relatório de Gestão</span></h3>
+      <h3><span class="alerta">${qtd(d.pendentes, "plano", "planos")} sem Relatório de Gestão</span></h3>
       <div class="meta">Prazo do ciclo: <b>${d.prazo_ciclo||"—"}</b> · ${d.base_legal||""}<br>
         Risco: ${d.risco}<br>${d.regra_capital}</div>
       <a href="/api/relatorio-gestao-pix/${cnpj}?formato=md" target="_blank">▸ abrir rascunho completo (markdown, colável)</a>

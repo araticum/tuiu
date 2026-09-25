@@ -33,6 +33,15 @@ from g2_parcerias import BASE, _get_json, _url_rota, data_atualizacao  # noqa: E
 RAIZ = Path(__file__).resolve().parents[2]
 ESPECIAIS = BASE.rsplit("/", 1)[0] + "/especiais"
 
+# Rotas da API /especiais. Entre 27 e 28/08/2026 a API trocou `_` por `-` em TODAS as
+# rotas (`beneficiarios_especiais` → `beneficiarios-especiais`); os parâmetros
+# (`cnpj_beneficiario`, `id_beneficiario`, `id_plano_acao`) não mudaram. O 404 ficou
+# 27 dias em silêncio. Fonte da verdade: `https://api-publica.transferegov.gestao.gov.br/especiais/openapi.json`.
+ROTA_BENEFICIARIOS = "beneficiarios-especiais"
+ROTA_PLANOS_ACAO = "planos-acao-especiais"
+ROTA_RELATORIOS_GESTAO = "relatorios-gestao-especiais"
+ROTA_PLANOS_TRABALHO = "planos-trabalho-especiais"
+
 def monitorados() -> dict[str, str]:
     """Quem o pipeline acompanha. FONTE DE VERDADE = tabela `clientes` (a
     carteira do operador cresce por dado, não por commit). O dicionário abaixo
@@ -168,7 +177,7 @@ def _purgar_orfaos(base_out: Path, cnpjs: list[str]) -> None:
 
 
 def _chave_cnpj_especiais() -> str:
-    """Nome do parâmetro de CNPJ em `beneficiarios_especiais`, descoberto UMA vez.
+    """Nome do parâmetro de CNPJ em `beneficiarios-especiais`, descoberto UMA vez.
 
     Antes, todo cliente sem beneficiário refazia a descoberta e repetia a
     consulta. Só que **transferência especial é do ENTE** (art. 166-A) — nossa
@@ -179,7 +188,7 @@ def _chave_cnpj_especiais() -> str:
     global _CHAVE_ESPECIAIS
     if _CHAVE_ESPECIAIS is None:
         try:
-            amostra = _get_json(f"{ESPECIAIS}/beneficiarios_especiais?pagina=1&tamanho_da_pagina=1")["data"]
+            amostra = _get_json(f"{ESPECIAIS}/{ROTA_BENEFICIARIOS}?pagina=1&tamanho_da_pagina=1")["data"]
             _CHAVE_ESPECIAIS = next(
                 (k for k in (amostra[0] if amostra else {}) if "cnpj" in k.lower()),
                 "cnpj_beneficiario")
@@ -211,18 +220,18 @@ def recortar(cnpj: str, destino: Path, workers: int) -> dict:
         BASE, "beneficiario_emenda_parlamentar", {"nr_cnpj_beneficiario_emenda": cnpj})
 
     # Especiais: acha o(s) beneficiário(s) pelo CNPJ e traz os planos por id.
-    beneficiarios = _todas_paginas(ESPECIAIS, "beneficiarios_especiais",
+    beneficiarios = _todas_paginas(ESPECIAIS, ROTA_BENEFICIARIOS,
                                    {_chave_cnpj_especiais(): cnpj})
     planos = []
     for b in beneficiarios:
         bid = next((v for k, v in b.items() if k.lower().startswith("id") and "benef" in k.lower()), None)
         if bid is not None:
-            planos.extend(_todas_paginas(ESPECIAIS, "planos_acao_especiais", {"id_beneficiario": str(bid)}))
+            planos.extend(_todas_paginas(ESPECIAIS, ROTA_PLANOS_ACAO, {"id_beneficiario": str(bid)}))
 
     # ciclo do plano: relatórios de gestão e planos de trabalho ligam por id_plano_acao
     ids_pa = [p.get("id_plano_acao") for p in planos if p.get("id_plano_acao") is not None]
-    relatorios = _por_ids("relatorios_gestao_especiais", "id_plano_acao", ids_pa, workers, base=ESPECIAIS)
-    planos_trabalho = _por_ids("planos_trabalho_especiais", "id_plano_acao", ids_pa, workers, base=ESPECIAIS)
+    relatorios = _por_ids(ROTA_RELATORIOS_GESTAO, "id_plano_acao", ids_pa, workers, base=ESPECIAIS)
+    planos_trabalho = _por_ids(ROTA_PLANOS_TRABALHO, "id_plano_acao", ids_pa, workers, base=ESPECIAIS)
 
     pdir = destino / "parcerias"
     for rota, linhas in r.items():

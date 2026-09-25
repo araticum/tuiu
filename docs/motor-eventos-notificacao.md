@@ -28,20 +28,161 @@ recorte g2/detru  →  eventos.py (diff vs entidades_estado)  →  eventos
 |---|---|---|
 | `outbox` | sempre | — (persiste em `entregas`, status `pendente`) |
 | `webhook` | se `TUIU_WEBHOOK_URL` **ou** destinatário `canal='webhook'` | `TUIU_WEBHOOK_URL=https://seu-endpoint` |
-| `whatsapp` | se destinatário `canal='whatsapp'` **e** provider configurado | `TUIU_WPP_TOKEN`, `TUIU_WPP_PHONE_ID` (WhatsApp Cloud API própria) |
+| `whatsapp` | se destinatário `canal='whatsapp'` **e** Cloud API configurada | `TUIU_WPP_TOKEN`, `TUIU_WPP_PHONE_ID` (Cloud API oficial da Meta) |
+| `seriema` | **EQUIPE** — aviso interno, não chega ao cliente | `TUIU_SERIEMA_PROVIDER` + o do transporte |
 
-- `TUIU_WPP_DRYRUN=1` monta o payload e **não** envia (teste).
-- **Não** usa a Seriema de produção do oasis.v2 (decisão do dono 18/07):
-  instância de notificação própria entra na **F5**; até lá, `webhook` já leva o
-  evento para onde o dono quiser (inclusive uma ponte WhatsApp própria).
-- Segredos ficam no cofre DPAPI / `.env` do repo — nunca no código.
+### Quem recebe hoje: a EQUIPE (decisão do dono, 27/07)
+
+No período de testes o alvo é a **nossa organização interna**, não o cliente.
+Notificação a cliente só na expansão e **com autorização de mais números** —
+até lá `canal_whatsapp` fica desligado e `destinatarios` vazio.
+
+Ou seja: o canal em uso é o `seriema`, no transporte `cloud_api`.
+
+### Dois transportes do canal interno
+
+| | `internal_session` (padrão) | `cloud_api` |
+|---|---|---|
+| Como | HMAC v1 no sidecar de sessão | API oficial da Meta |
+| Destino | um GRUPO (`@g.us`) | cada número de `TUIU_SERIEMA_CLOUD_DESTINOS` |
+| Precisa | sidecar de pé | só o `TUIU_WPP_*` que o canal do cliente já usa |
+
+A Cloud API **não envia para grupo** — lá "o grupo" vira a lista de quem opera.
+E o sidecar nunca subiu no araticum, o que deixava este canal inerte e o alarme
+de cadeia quebrada mudo (o buraco de 22/07). Com `cloud_api` o aviso interno sai
+sem sidecar nenhum, reusando o mesmo número e o mesmo token do canal do cliente
+— prefixo próprio de credencial criaria duas verdades que divergem caladas no
+dia em que uma for rotacionada.
+
+Transporte desconhecido cai na sessão: um typo no env não pode redirecionar
+aviso interno. Fan-out **falha se qualquer destino falhar** — aviso que chega
+pela metade é aviso quebrado. Travado em `testes/teste_seriema_nuvem.py`.
+
+- `TUIU_WPP_DRYRUN=1` monta o payload e **não** envia (teste). O payload sai
+  inteiro no `detalhe` da entrega — é o que se confere antes de virar a chave.
+- **Não** usa a Seriema de produção do oasis.v2 (decisão do dono 18/07). E a
+  sessão Seriema não serviria para o caso do WhatsApp direto: ela só fala com
+  GRUPO (`isGroupJid` recusa qualquer outro JID). Por isso o canal `whatsapp` é
+  a **Cloud API oficial** (decisão do dono, 27/07) — `app/wpp_cloud.py`.
+- Segredos ficam no cofre DPAPI / `.env` do host — nunca no código.
+
+### Template (obrigatório para alerta proativo)
+
+Aviso de andamento cai **fora da janela de 24h**, e aí a Meta só entrega
+mensagem de template aprovado. O corpo é **fonte única** em
+`ferramentas/template_wpp.py` (constante `CORPO`), que também submete:
+
+```
+python ferramentas/template_wpp.py --corpo      # o que vai ser enviado
+python ferramentas/template_wpp.py --submeter
+python ferramentas/template_wpp.py --listar     # acompanha a aprovação
+```
+
+Nome `aviso_tuiu_andamento`, categoria **UTILITY**, idioma **pt_BR**, na WABA
+`Seriema1` (a mesma do `aviso_veredas`). Cinco variáveis:
+
+| | conteúdo | exemplo |
+|---|---|---|
+| `{{1}}` | cliente | `FUNDACAO FACULDADE DE MEDICINA` |
+| `{{2}}` | instrumento | `Convênio/CR 850704` |
+| `{{3}}` | tipo + transição | `mudança de andamento: … em Análise → … em Complementação` |
+| `{{4}}` | o que fazer + data | `Prazo: 14/08/2026 (em 18d) · … · dados de 25/07/2026` |
+| `{{5}}` | ficha do cliente | `https://tuiu.araticum.net/cliente.html?doc=60453032000174` |
+
+⚠️ **Duas armadilhas medidas contra a API real (27/07):**
+
+1. **Variáveis demais para o tamanho do texto.** A versão de 7 variáveis foi
+   recusada com `2388293 — muitas variáveis para sua extensão`. A Meta cobra
+   proporção entre texto fixo e variável; 5 com o corpo atual passou. Nada de
+   informação se perdeu — o tipo do evento foi para o `{{3}}` e a data do dado
+   fecha o `{{4}}`.
+2. **Apagar template queima o nome por até 30 dias.** `aviso_tuiu` (nome curto,
+   na convenção da casa) foi excluído em 27/07 e ficou indisponível; daí o
+   `_andamento`. Por isso `--submeter --forcar` **nunca** apaga sozinho: em
+   recusa de edição ele para e explica. Apagar exige `--apagar` e confirmação.
+
+⚠️ A Meta recusa parâmetro com quebra de linha, tabulação, 5+ espaços seguidos
+ou vazio (erro 132000). O parecer do órgão vem do CSV **com** `\n` e `\t`, então
+`wpp_cloud.limpar_parametro` normaliza tudo antes de enviar — a quebra de linha
+mora no corpo do template, nunca no valor. Travado em `teste_wpp_cloud.py`.
+
+### A mensagem se basta — e ainda leva o link
+
+Carrega o que decide (instrumento, transição, prazo, de quem é a bola, próximo
+passo e a exigência do órgão, puxados de `marcos` por `notificador.contexto()`)
+**e** o link da ficha: `{TUIU_CONSOLE_URL}/cliente.html?doc=<cnpj>`, que abre no
+celular na tela de login do Tuiú.
+
+É a ficha do cliente, **não a mesa**: a `/mesa.html` não lê query param, então
+um link para ela abriria o backlog inteiro da carteira em vez do caso avisado.
+Deep-link por item da mesa é trabalho em aberto.
+
+⚠️ A URL sai de `TUIU_CONSOLE_URL` (default `https://tuiu.araticum.net`) e é a
+MESMA nos dois caminhos, texto e template — duas fontes divergiriam caladas e o
+erro só apareceria no celular de quem recebeu.
 
 ### Destinatários
 
-`INSERT INTO destinatarios (cnpj, canal, endereco) VALUES ('*','whatsapp','5561999990000');`
-(`cnpj='*'` = todos os entes; ou o CNPJ específico). WhatsApp Cloud API fora da
-janela de 24h exige *template* aprovado — para alertas proativos, cadastrar um
-template e trocar o corpo `text` por `template` no `notificador._enviar_whatsapp`.
+```
+python ferramentas/destinatario.py --listar
+python ferramentas/destinatario.py --add 61999990000 --canal whatsapp   # '*' = carteira toda
+python ferramentas/destinatario.py --testar 5561999990000 --modo texto --evento ultimo
+```
+
+`--testar` manda UMA mensagem fora do motor (não grava em `entregas`: teste não
+pode marcar evento real como já notificado). `--evento ultimo` usa um evento
+REAL da base — o teste mostra o que o pipe produz, não um exemplo que sempre
+parece bonito. `--modo texto` é o caminho da **janela de 24h**: se a pessoa
+escreveu para o número da API nas últimas 24h, texto livre entrega sem template
+aprovado; fora dela, só template.
+
+Cadastrar **não liga** o canal: continuam valendo as duas travas em série
+(`notificacoes_ativas` + `canal_whatsapp`), que se ligam em `/notificacoes.html`
+com autor e horário registrados.
+
+### Idempotência
+
+A entrega é **reservada e comitada antes do envio**. A Cloud API não tem dedup
+por chave (a sessão Seriema tinha), então sem a reserva uma queda no meio do
+laço faria o mesmo alerta tocar o telefone de alguém de novo no dia seguinte. O
+preço: entrega em `erro` não é retentada sozinha — reenvio é ato deliberado.
+
+### Webhook da Meta — a porta de entrada (F1.7)
+
+No Cloud API a mensagem RECEBIDA só chega por push; não existe rota para
+consultar histórico. Sem webhook, duas coisas ficam sem resposta: **quem
+escreveu para o número** e **se a janela de 24h está aberta** (a segunda importa
+enquanto o template não é aprovado, porque é ela que decide se texto livre
+entrega).
+
+`POST/GET /api/wpp/webhook` — a **única rota pública que aceita POST**. Está fora
+do gate de sessão porque a Meta precisa alcançá-la e não faz login. O que a
+protege:
+
+| | |
+|---|---|
+| Autenticação | `X-Hub-Signature-256` = HMAC-SHA256 do corpo **cru** com o App Secret |
+| Comparação | `hmac.compare_digest` (tempo constante) |
+| Sem segredo | **recusa tudo** — fail-closed, mesma regra do `app.config` |
+| Ordem | verifica os BYTES **antes** de virar JSON — assinar o texto reserializado validaria uma coisa e gravaria outra |
+| Resposta | 200 no caminho feliz; erro faz a Meta reentregar em loop |
+
+🔒 **Minimização por estrutura:** o texto da mensagem não é lido nem gravado — a
+tabela `wpp_entrada` **não tem coluna para ele** (`db/0026`). Guarda remetente,
+id, status e horário, que basta para as duas perguntas. Travado em
+`teste_wpp_webhook.py`: se alguém "melhorar" o extrator para guardar o texto, o
+teste cai.
+
+⚠️ **Escopo (dono, 27/07):** vale enquanto o destinatário é a EQUIPE. Ao expandir
+para CLIENTE, passa pelo gate do `PRIVACY.md` §2 antes — aí o número de terceiro
+que escreve é dado pessoal de titular que não é nosso operador.
+
+Config: `TUIU_WPP_APP_SECRET` (Meta > app > Configurações > Básico) e
+`TUIU_WPP_VERIFY_TOKEN` (string que nós escolhemos). Cadastro na Meta: app >
+WhatsApp > Configuração > Webhook, URL `https://tuiu.araticum.net/api/wpp/webhook`,
+campos `messages`; depois `POST /{WABA_ID}/subscribed_apps`.
+
+`GET /api/wpp/entrada?horas=` mostra quem escreveu e se a janela está aberta.
 
 ## API / tela
 
@@ -81,6 +222,26 @@ py -3 ingest/inbox/coletar_inbox.py --eml <pasta>     # inbox por .eml (teste)
 py -3 ingest/inbox/coletar_inbox.py                   # inbox por IMAP (env)
 py -3 backend/app/notificador.py                      # despacha
 py -3 ops/rodar_diario.py                             # cadeia inteira
+py -3 -m pytest testes/teste_wpp_cloud.py             # formato do template + autossuficiência
 py -3 testes/smoke_eventos.py                         # smoke diff (webhook + wpp dryrun)
 py -3 testes/smoke_inbox.py                           # smoke inbox (allowlist + atribuição)
+```
+
+## Quando o dado chega (e por que a cadeia é 09h30)
+
+`ops/sonda_atualizacao.py` mede, em vez de estimar. Dois sinais:
+
+- **detru (CSV)** — `Last-Modified` do HEAD dos ZIPs é a hora exata da
+  publicação, sem baixar os 300 MB. Medido em 27/07: **08:13 BRT**. É a fonte
+  que hoje produz quase todo evento (`convenio_legado`).
+- **g2 (API)** — `data_ultima_atualizacao` vem carimbado `T00:00:00`: diz de que
+  DIA é o dado, nunca a hora da carga. A hora sai do *flip* entre sondagens.
+
+Evidência indireta acumulada: em 19→27/07, às 09h36 o campo já mostrava o dia
+corrente e as 100 conferências de `verificar.py` batiam — a carga termina antes
+disso. A cadeia às 09h30 tem ~1h15 de folga sobre o detru.
+
+```
+py -3 ops/sonda_atualizacao.py            # uma sondagem (o timer chama assim)
+py -3 ops/sonda_atualizacao.py --resumo   # janelas medidas até agora
 ```

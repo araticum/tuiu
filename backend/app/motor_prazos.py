@@ -291,7 +291,11 @@ def _marcos_g2(cnpj: str, ente: str, sub: Path, hoje: date, con=None) -> list[di
                 "quando": quando,
                 "resultado": a.get("in_resultado_analise"),
                 "fase": a.get("in_fase_analise"),
-                "parecer": (a.get("ds_parecer") or "").strip()[:600],
+                # INTEIRO, não os primeiros 600: todo corte era pelo começo, e
+                # o que sumia era o fim — onde mora a consequência ("resultará
+                # no arquivamento"). Quem exibe decide o tamanho, com o resumo
+                # de `app.parecer`, que corta pelo que importa e não pela ordem.
+                "parecer": (a.get("ds_parecer") or "").strip(),
             }
 
     # 3) Proposta parada em análise: agora com os DENTES do art. 97. O prazo do

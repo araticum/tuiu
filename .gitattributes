@@ -5,3 +5,7 @@
 *.yaml  text eol=lf
 *.yml   text eol=lf
 *.sql   text eol=lf
+# a imagem e as units do systemd também vão ao host como estão
+ops/Dockerfile  text eol=lf
+ops/systemd/**  text eol=lf
+.dockerignore   text eol=lf

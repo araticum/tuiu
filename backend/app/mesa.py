@@ -17,10 +17,15 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.carteira import escopo_instrumentos, nome_exibicao
 from app.db import conectar
+from app.notificador import CONSOLE_URL
 from app.dossie import percentuais as dossie_percentuais
 from app.execucao import por_instrumento
 from app.fila import _acoes
+from app.parecer import resumo as resumo_parecer
+from app.minutas import peca_de
+from app.referencias import do_instrumento
 
 # Faixas da mesa — o rank ordena o backlog (0 = mais urgente); o rótulo é o que o
 # operador lê. Espelha a taxonomia em camadas da planilha do Danilo, derivada do
@@ -67,6 +72,13 @@ def _ultima_fase(con) -> dict[str, dict]:
     return out
 
 
+def _refs(cnpj: str, instrumento) -> list[dict]:
+    try:
+        return do_instrumento(cnpj, instrumento) if instrumento else []
+    except Exception:  # noqa: BLE001 — referência é enriquecimento
+        return []
+
+
 def montar(cliente: str | None = None) -> dict:
     hoje = date.today()
     with conectar() as con:
@@ -84,7 +96,13 @@ def montar(cliente: str | None = None) -> dict:
         except Exception:  # noqa: BLE001
             con.rollback()
             dossies = {}
-        status = {r[0]: r[1] for r in con.execute("SELECT chave, status FROM fila_status")}
+        # responsável junto do status: são a mesma pergunta do mesmo objeto
+        # ("de quem é" / "como está"), e separar obrigaria segundo join
+        marcas = {r[0]: {"status": r[1], "responsavel": r[2], "nome": r[3]}
+                  for r in con.execute(
+                      "SELECT f.chave, f.status, f.responsavel, u.nome FROM fila_status f"
+                      " LEFT JOIN usuarios u ON u.login = f.responsavel")}
+        status = {k: v["status"] for k, v in marcas.items()}
 
         sql = ("SELECT cnpj, tipo, instrumento, data_limite, descricao, base_legal, farol, detalhes"
                " FROM marcos WHERE farol <> 'ok'")
@@ -93,9 +111,19 @@ def montar(cliente: str | None = None) -> dict:
             sql += " AND cnpj = %s"
             args = (cliente,)
 
+        # ESCOPO: cliente na carteira não é o mesmo que instrumento sob
+        # acompanhamento. Sem este filtro, um cliente com 40 convênios no dump
+        # federal enchia a fila com os 37 que a casa não opera — 38% da
+        # notificação de 25/08 era isso, incluindo o item do topo.
+        escopo = escopo_instrumentos()
+
         itens = []
         for cnpj, tipo, instr, limite, desc, base, farol, det in con.execute(sql, args):
             if cnpj not in clientes:          # a mesa é da carteira de CLIENTES
+                continue
+            # marco de CLIENTE (instrumento nulo) passa: ele agrega o cliente
+            # inteiro e não tem instrumento para conferir contra o escopo
+            if escopo and instr is not None and (cnpj, str(instr)) not in escopo:
                 continue
             d = det or {}
             bola = d.get("bola_com", "convenente")
@@ -106,19 +134,34 @@ def montar(cliente: str | None = None) -> dict:
             exig = (ultimo.get("parecer") if isinstance(ultimo, dict) else None) or ""
             itens.append({
                 "chave": chave, "status": status.get(chave, "aberto"),
-                "cnpj": cnpj, "cliente": clientes.get(cnpj, cnpj),
+                # None = sem dono. É o número que a mesa precisa mostrar em
+                # destaque: item sem dono não é item coberto.
+                "responsavel": (marcas.get(chave) or {}).get("responsavel"),
+                "responsavel_nome": (marcas.get(chave) or {}).get("nome"),
+                # nome_exibicao, não `clientes.get` cru: é o furo que o docstring
+                # dele adverte — quem resolve o nome por fora perde o rótulo à mão
+                # e a correção ortográfica, e a mesa mostrava CAIXA ALTA sem acento
+                "cnpj": cnpj, "cliente": nome_exibicao(cnpj, clientes.get(cnpj), clientes),
                 "instrumento": instr, "situacao": d.get("situacao") or "",
                 "rank": rank, "faixa": faixa, "farol": farol, "bola": bola,
                 "responder_ate": limite.isoformat() if limite else None, "dias": dias,
                 "tipo": tipo, "descricao": desc, "base_legal": base,
                 "proximo_passo": acoes.get(tipo, "Analisar"),
-                "exigencia": exig.strip()[:400] or None,
+                # resumo, não prefixo: pedido + prazo + consequência, que é a
+                # ordem em que o operador decide (ver app.parecer)
+                "exigencia": (resumo_parecer(exig, 400) if exig.strip() else None),
                 "ultima_fase": fases.get(cnpj),
                 "execucao": execucao.get((cnpj, instr)),   # R$ do convênio (None se g2/sem dado)
                 # % de dossiê só faz sentido em item com convênio e que peça PC
                 "dossie": dossies.get((cnpj, instr)) if instr and tipo in (
                     "prestacao_contas", "complementacao_pendente") else None,
                 "tem_dossie": bool(instr and tipo in ("prestacao_contas", "complementacao_pendente")),
+                # a peça pronta do item: o operador chega no rascunho, não na
+                # tarefa em branco (ver minutas.PECA_POR_MARCO)
+                "peca": peca_de(tipo, cnpj, instr, CONSOLE_URL),
+                # caminhos até o documento (SEI, DOU) — o link do SEI exige
+                # captcha e vem rotulado como tal; ver app.referencias
+                "referencias": _refs(cnpj, instr),
             })
 
     abertos = [i for i in itens if i["status"] in ("aberto", "em_andamento")]

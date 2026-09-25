@@ -8,11 +8,13 @@ Rodar da raiz do repo:
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import auth
@@ -26,12 +28,17 @@ app = FastAPI(title="Tuiú", version="0.3.0-console")
 
 # Lista de exceções EXPLÍCITA e curta. Tudo o mais exige sessão — o padrão é
 # fechado, então esquecer de proteger uma rota nova não abre buraco.
-PUBLICO = {"/login.html", "/api/login", "/api/sessao"}
+#
+# `/api/wpp/webhook` é a ÚNICA rota pública que aceita POST. Está aqui porque os
+# servidores da Meta precisam alcançá-la e não fazem login — não é descuido. Ela
+# não confia em ninguém: exige HMAC-SHA256 do corpo cru com o App Secret e
+# RECUSA tudo enquanto o segredo não estiver configurado (ver app.wpp_webhook).
+PUBLICO = {"/login.html", "/api/login", "/api/sessao", "/api/wpp/webhook"}
 
 # Chrome de UI compartilhado (CSS/JS/fontes) NÃO tem dado sensível — o dado vive
 # atrás de /api. Servem sem sessão para qualquer papel; senão cliente/anônimo
 # tomam 303/403 e o tema/nav não carregam. As PÁGINAS .html seguem fechadas.
-ASSETS_PUBLICOS = {"/nav.js", "/tema.js", "/tuiu-cartorio.css", "/tuiu-fontes.css"}
+ASSETS_PUBLICOS = {"/nav.js", "/tema.js", "/br.js", "/tuiu-cartorio.css", "/tuiu-fontes.css"}
 
 # Permissões do papel `cliente`: (MÉTODO, prefixo). O método faz parte da
 # permissão — sem ele, "pode ver /api/cliente/" virava "pode escrever em
@@ -110,6 +117,16 @@ async def exigir_sessao(request: Request, call_next):
             and caminho not in ("/api/logout", "/api/senha", "/api/perfil/login"):
         return JSONResponse({"erro": "somente leitura"}, status_code=403)
 
+    # Notificações são de OPERADOR (decisão do dono, 27/07). A tela mostra os
+    # NÚMEROS de celular de quem opera e o estado dos canais: é superfície de
+    # operação, não de leitura. `cliente` já não alcança (não está em
+    # PERMISSOES_CLIENTE); esta trava fecha para `leitor`, que hoje lê tudo.
+    if (caminho.startswith("/api/notificacoes") or caminho == "/notificacoes.html") \
+            and usuario.get("papel") != "operador":
+        if caminho.startswith("/api/"):
+            return JSONResponse({"erro": "so operador"}, status_code=403)
+        return RedirectResponse("/", status_code=303)
+
     # Configurar a plataforma (situações, ações) é de ADMIN — Pedro e Danilo.
     # Operador comum opera; admin calibra o motor. Fecha para todo o resto.
     if (caminho.startswith("/api/config") or caminho == "/config.html") \
@@ -131,7 +148,13 @@ def login(corpo: dict, request: Request, response: Response):
         raise HTTPException(401, msg)
     response.set_cookie(
         auth.COOKIE, token, httponly=True, samesite="lax",
-        secure=os.environ.get("TUIU_COOKIE_SECURE") == "1",
+        # `Secure` é o PADRÃO, e desligar exige opt-in — mesma regra do
+        # TUIU_TLS_INSECURE. Antes era o contrário: só marcava Secure se
+        # TUIU_COOKIE_SECURE=1, variável que NUNCA existiu no host. O console
+        # está publicado em https com dado de 50 organizações reais, e o cookie
+        # de sessão saía sem a marca — bastava uma requisição http para ele
+        # viajar em claro. Fail-open é o oposto do resto desta base.
+        secure=os.environ.get("TUIU_COOKIE_INSEGURO") != "1",
         max_age=auth.DURACAO_SESSAO_H * 3600, path="/")
     return {"ok": True, **(auth.sessao_valida(token) or {})}
 
@@ -180,6 +203,26 @@ def fila_triar(payload: dict):
     from app.fila import triar
     return triar(payload.get("chave", ""), payload.get("status", ""),
                  payload.get("nota"), payload.get("operador"))
+
+
+@app.get("/api/responsaveis")
+def api_responsaveis():
+    """Para quem a mesa pode atribuir. Operador-only, como o resto da mesa."""
+    from app.fila import responsaveis
+    return {"responsaveis": responsaveis()}
+
+
+@app.post("/api/fila/atribuir")
+def fila_atribuir(payload: dict, request: Request):
+    """Diz de quem é o item. `responsavel: null` devolve para a mesa.
+
+    Quem ATRIBUIU sai da sessão, nunca do corpo: é campo de auditoria, e aceitar
+    do cliente deixaria qualquer um assinar a atribuição com o nome de outro.
+    O `responsavel` vem do corpo porque distribuir para terceiro é o caso normal.
+    """
+    from app.fila import atribuir
+    quem = (getattr(request.state, "usuario", None) or {}).get("login")
+    return atribuir(payload.get("chave", ""), payload.get("responsavel"), quem)
 
 
 @app.get("/api/mesa")
@@ -250,7 +293,8 @@ def minuta(doc: str, tipo: str = "cobranca-art97", proposta: str = "", formato: 
     gerar = GERADORES.get(tipo)
     if gerar is None:
         raise HTTPException(404, "tipo de minuta desconhecido")
-    if not proposta:
+    # a cobrança do legado é do CLIENTE (agregado), não de um instrumento
+    if not proposta and tipo != "cobranca-analise":
         raise HTTPException(400, "informe a proposta")
     d = gerar(doc, proposta)
     if not d.get("disponivel"):
@@ -423,7 +467,15 @@ def entregas(canal: str | None = None):
             sql += " ORDER BY e.id DESC LIMIT 100"
             cols = ["id", "canal", "endereco", "mensagem", "status", "detalhe",
                     "criado_em", "enviado_em"]
-            return {"disponivel": True, "entregas": [dict(zip(cols, r)) for r in con.execute(sql, args)]}
+            linhas = [dict(zip(cols, r)) for r in con.execute(sql, args)]
+
+        # `enviado` só diz que a Meta aceitou. Entregue/lido vem do webhook.
+        from app.wpp_webhook import WAMID, recibos
+        mapa = recibos([l["detalhe"] for l in linhas])
+        for l in linhas:
+            recibo = [mapa[m] for m in WAMID.findall(l["detalhe"] or "") if m in mapa]
+            l["recibo"] = max(recibo, key=lambda r: r["em"]) if recibo else None
+        return {"disponivel": True, "entregas": linhas}
     except Exception as exc:  # noqa: BLE001
         return {"disponivel": False, "erro": str(exc), "entregas": []}
 
@@ -460,6 +512,53 @@ def notificacoes_gravar(corpo: dict, request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"ok": True, **r, **estado_notificacoes()}
+
+
+@app.get("/api/wpp/webhook")
+def wpp_webhook_verificar(request: Request):
+    """Handshake de cadastro da Meta: ela chama com um token que nós escolhemos
+    e espera o `hub.challenge` de volta, em texto puro."""
+    from app import wpp_webhook
+
+    q = request.query_params
+    esperado = wpp_webhook.token_verificacao()
+    if not esperado or q.get("hub.verify_token") != esperado:
+        # 403 sem detalhe: quem errou o token não merece saber se ele existe
+        raise HTTPException(403, "verificacao recusada")
+    return PlainTextResponse(q.get("hub.challenge") or "")
+
+
+@app.post("/api/wpp/webhook")
+async def wpp_webhook_receber(request: Request):
+    """Entrada da Meta. Corpo lido como BYTES e autenticado ANTES de virar JSON —
+    assinar o texto reserializado validaria uma coisa e gravaria outra.
+
+    Sempre 200 no caminho feliz: erro faz a Meta reentregar em loop, e uma falha
+    nossa de gravação não é problema dela.
+    """
+    from app import wpp_webhook
+
+    corpo = await request.body()
+    if not wpp_webhook.assinatura_confere(corpo, request.headers.get("x-hub-signature-256")):
+        raise HTTPException(403, "assinatura invalida")
+    try:
+        return {"ok": True, **wpp_webhook.registrar(json.loads(corpo or b"{}"))}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[wpp_webhook] falha ao gravar: {exc}", file=sys.stderr)
+        return {"ok": False}
+
+
+@app.get("/api/wpp/entrada")
+def wpp_entrada(horas: int = 168):
+    """Quem escreveu para o número da API, e se a janela de 24h está aberta.
+    Sem conteúdo de mensagem — não é guardado (ver db/0026)."""
+    from app import wpp_webhook
+
+    try:
+        return {"disponivel": True, "contatos": wpp_webhook.quem_escreveu(horas),
+                "webhook_configurado": wpp_webhook.configurado()}
+    except Exception as exc:  # noqa: BLE001
+        return {"disponivel": False, "erro": str(exc), "contatos": []}
 
 
 @app.get("/api/normas")
@@ -864,6 +963,40 @@ def cfg_reprocessar():
         return {"ok": True, **gerar_marcos()}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(500, str(exc)) from exc
+
+
+# ------------------------------------------------- distribuição da fila (admin)
+# Mora sob /api/config de propósito: o middleware acima já barra não-admin nesse
+# prefixo, e repartir trabalho entre pessoas é decisão de gestão, não de
+# operação. Pendurar aqui evita um segundo portão para manter em dia.
+@app.get("/api/config/distribuicao")
+def api_distribuicao():
+    """Quadro para decidir a cota: quem existe, quanto já tem, quanto falta dar."""
+    from app.distribuicao import cotas, sem_dono
+    return {"cotas": cotas(), "sem_dono": len(sem_dono())}
+
+
+@app.post("/api/config/distribuicao/cotas")
+def api_distribuicao_cotas(payload: dict, request: Request):
+    from app.distribuicao import gravar_cotas
+    quem = (getattr(request.state, "usuario", None) or {}).get("login")
+    return gravar_cotas(payload.get("cotas") or {}, quem)
+
+
+@app.post("/api/config/distribuicao/simular")
+def api_distribuicao_simular(payload: dict):
+    """O plano ANTES de aplicar. Distribuir trabalho às cegas não se desfaz com
+    um clique: cada item vira tarefa de uma pessoa real."""
+    from app.distribuicao import planejar
+    return planejar(bool(payload.get("agrupar_por_cliente", True)), payload.get("cliente"))
+
+
+@app.post("/api/config/distribuicao/aplicar")
+def api_distribuicao_aplicar(payload: dict, request: Request):
+    from app.distribuicao import aplicar
+    quem = (getattr(request.state, "usuario", None) or {}).get("login")
+    return aplicar(bool(payload.get("agrupar_por_cliente", True)),
+                   payload.get("cliente"), quem)
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", html=True))

@@ -15,7 +15,14 @@ from __future__ import annotations
 
 from app.db import conectar
 
-CHAVES_NOTIFICACAO = ("notificacoes_ativas", "canal_seriema", "canal_whatsapp", "canal_webhook")
+CHAVES_NOTIFICACAO = ("notificacoes_ativas", "canal_seriema", "canal_whatsapp", "canal_webhook",
+                      # modo: false (padrão) = um resumo por dia; true = uma
+                      # mensagem por evento. Os dois juntos são a enxurrada que
+                      # o resumo veio evitar — ver db/0028.
+                      "alerta_por_evento",
+                      # etapa B: redacao do rascunho por IA (DeepInfra), com o
+                      # texto pseudonimizado. Ver db/0029 e app.redator.
+                      "redacao_ia")
 _VERDADEIROS = ("true", "1", "sim", "on", "yes")
 
 
@@ -61,9 +68,17 @@ def gravar(chave: str, valor: str, quem: str | None = None) -> dict:
     return {"chave": chave, "de": de, "para": valor}
 
 
+def _falhas() -> list[dict]:
+    try:
+        from app.wpp_webhook import falhas_recentes
+        return falhas_recentes(72)
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def estado() -> dict:
     """Estado + diagnóstico: o que está ligado E o que de fato conseguiria sair."""
-    from app import seriema
+    from app import seriema, wpp_cloud
 
     with conectar() as con:
         linhas = con.execute(
@@ -87,13 +102,20 @@ def estado() -> dict:
             "seriema": {
                 "ligado": chaves.get("canal_seriema", {}).get("ligado", False),
                 "configurado": seriema.configurado(), "dry_run": seriema.dry_run(),
-                "alcance": "grupo interno de operação (não chega ao cliente)",
-                "falta": None if seriema.configurado() else "TUIU_SERIEMA_BASE_URL e TUIU_SERIEMA_SECRET no host",
+                "transporte": seriema.provedor(),
+                "destinos": len(seriema.destinos_nuvem()),
+                "alcance": "EQUIPE — grupo interno de operação (não chega ao cliente)",
+                # o próprio cliente responde: com dois transportes, texto fixo
+                # aqui vira mentira na tela de quem opera
+                "falta": seriema.falta_config(),
             },
             "whatsapp": {
                 "ligado": chaves.get("canal_whatsapp", {}).get("ligado", False),
                 "destinatarios": dict(dest).get("whatsapp", 0),
-                "alcance": "CLIENTE — número cadastrado em `destinatarios`",
+                "configurado": wpp_cloud.configurado(), "dry_run": wpp_cloud.dry_run(),
+                "template": wpp_cloud.template_nome(),
+                "alcance": "CLIENTE — Cloud API oficial da Meta, número em `destinatarios`",
+                "falta": wpp_cloud.falta(),
             },
             "webhook": {
                 "ligado": chaves.get("canal_webhook", {}).get("ligado", False),
@@ -101,6 +123,9 @@ def estado() -> dict:
                 "alcance": "sistema externo (URL configurada)",
             },
         },
+        # entrega que a Meta aceitou e depois recusou: "enviado" no nosso log
+        # não prova chegada, e sem isto o silêncio passou 3 dias despercebido
+        "falhas_de_entrega": _falhas(),
         "eventos_sem_envio_externo": pendentes,
         "historico": [{"chave": c, "de": d, "para": p, "quem": q,
                        "quando": w.isoformat() if w else None} for c, d, p, q, w in historico],

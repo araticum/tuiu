@@ -47,6 +47,11 @@ data-atualizacao`
 
 ### 2.2 `/especiais` — 21 rotas (transferências ESPECIAIS / emenda Pix)
 
+> ⚠️ Desde ~28/08/2026 a API publica estas rotas com **hífen** (`beneficiarios-especiais`,
+> `planos-acao-especiais`, `relatorios-gestao-especiais`, `planos-trabalho-especiais`…); os
+> parâmetros não mudaram. Os nomes abaixo são os da época do levantamento (17/07). Conferir
+> sempre em `/especiais/openapi.json`.
+
 `planos_acao_especiais · planos_trabalho_especiais · relatorios_gestao_especiais
 · relatorios_gestao_novos_especiais · beneficiarios_especiais · empenhos_especiais
 · executores_especiais · finalidade_especiais · programas_especiais ·

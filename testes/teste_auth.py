@@ -369,8 +369,19 @@ def test_ultimo_operador_ativo_nao_pode_ser_desativado():
     ok, msg = auth.desativar("pytest_chefe", "pytest_novo", SENHA)
     assert ok, msg
     if outros == 0:
-        ok2, msg2 = auth.desativar("pytest_novo", "pytest_chefe", SENHA)
-        assert not ok2 and "último operador" in msg2
+        # Só sobrou pytest_chefe ativo. Quem poderia tirá-lo? Ele mesmo, não (regra da
+        # própria conta); pytest_novo, não (inativo não autentica — "senha não confere").
+        # Logo a casa nunca fica sem operador: é essa a invariante, e é o que se checa.
+        # (A ramificação antiga chamava desativar com o ator inativo e esperava a mensagem
+        # "último operador", que por construção é inalcançável — ver auth.desativar.)
+        ok2, msg2 = auth.desativar("pytest_chefe", "pytest_chefe", SENHA)
+        assert not ok2 and "própria conta" in msg2
+        ok3, msg3 = auth.desativar("pytest_novo", "pytest_chefe", SENHA)
+        assert not ok3, msg3
+        with conectar() as con:
+            ativos = con.execute(
+                "SELECT count(*) FROM usuarios WHERE ativo AND papel='operador'").fetchone()[0]
+        assert ativos >= 1, "a casa nunca fica sem operador ativo"
 
 
 def test_nao_desativa_a_propria_conta():

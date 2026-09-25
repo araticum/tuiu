@@ -23,12 +23,29 @@ from datetime import date, datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAIZ / "backend"))
+from app.texto_br import qtd, verbo  # noqa: E402
 LOGS = RAIZ / "ops" / "logs"
 CACHE_DETRU = RAIZ / "data" / "detru" / "cache"
 DOWNLOADS = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov"
 # o historico de situacao (102 MB) e o que diz HA QUANTO TEMPO a prestacao
 # esta parada na analise do concedente — sem ele nao da para acusar o art. 97
 ZIPS_DETRU = ["siconv_convenio.zip", "siconv_proposta.zip", "siconv_historico_situacao.zip"]
+
+# Arquivos que EVIDENCIAM o dossiê (db/0024). O checklist estava 100% em branco
+# — servia para saber o que reunir, não para mostrar o que já existe. Estes 7
+# provam 5 dos 8 itens a partir de dado aberto. São 6 (177 MB): o
+# `siconv_obtv_convenente` saiu depois de baixado — é chaveado por NR_MOV_FIN
+# e não liga ao convênio sem outro arquivo; `desembolso` já cobre o item.
+#
+# Semanal, não diário: contrato, aditivo e OBTV mudam devagar, e 235 MB por dia
+# seria pagar caro por frescor que ninguém usa. Fora da lista de propósito:
+# `siconv_pagamento.zip` (364 MB, o maior de todos, evidenciaria nota fiscal) —
+# entra se o item virar prioridade.
+ZIPS_DOCUMENTAIS = ["siconv_solicitacao_rendimento_aplicacao.zip", "siconv_prorroga_oficio.zip",
+                    "siconv_desembolso.zip", "siconv_licitacao.zip",
+                    "siconv_termo_aditivo.zip", "siconv_contrato.zip"]
+IDADE_MAX_DOCUMENTAL_H = 24 * 7
 IDADE_MAX_H = 20
 
 
@@ -39,9 +56,22 @@ def _log(fh, msg: str):
     fh.flush()
 
 
-def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
-    """`essencial=False` para elos INTERNOS (prospecção): eles não servem cliente,
-    então não podem interromper a cadeia que vigia prazo nem disparar alarme."""
+def _passo(fh, nome: str, cmd: list[str], essencial: bool = True,
+           avisar: bool | None = None) -> None:
+    """`essencial=False` não interrompe a cadeia. `avisar` decide se a equipe
+    ouve; por padrão acompanha `essencial`.
+
+    Os dois eram um só, e a fusão custou caro. Elo INTERNO (prospecção) não
+    serve cliente: não para a cadeia nem faz barulho. Mas há elo que é
+    ENRIQUECIMENTO de terceiro — a regularidade na CGU — que não pode parar a
+    vigília de prazo e mesmo assim precisa ser sabido: sem ele o impedimento do
+    convenente envelhece calado.
+
+    Com um botão só, esse elo estava marcado essencial e derrubou a cadeia em
+    31/07, 01/08 e 02/08 por um pico de latência da CGU — três dias sem
+    recalcular prazo porque uma API de terceiro demorou a responder.
+    """
+    avisar = essencial if avisar is None else avisar
     _log(fh, f"-> {nome}: {' '.join(cmd)}")
     t0 = time.time()
     proc = subprocess.run(cmd, cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -49,7 +79,10 @@ def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
     fh.write(proc.stderr or "")
     if proc.returncode != 0:
         if not essencial:
-            _log(fh, f"~ {nome} falhou (rc={proc.returncode}) — elo interno, cadeia segue")
+            _log(fh, f"~ {nome} falhou (rc={proc.returncode}) — cadeia segue"
+                     f"{' (equipe avisada)' if avisar else ' (elo interno, sem alarme)'}")
+            if avisar:
+                _avisar_falha(nome, proc.returncode, interrompeu=False)
             return
         _log(fh, f"X {nome} FALHOU (rc={proc.returncode}) — cadeia interrompida")
         _avisar_falha(nome, proc.returncode)
@@ -57,44 +90,189 @@ def _passo(fh, nome: str, cmd: list[str], essencial: bool = True) -> None:
     _log(fh, f"OK {nome} ok ({round(time.time() - t0, 1)}s)")
 
 
-def _refresh_detru(fh):
+def _refresh_detru(fh, zips=None, idade_max=None):
+    """Baixa os ZIPs do detru — com rede tratada e escrita atômica.
+
+    Duas falhas moravam aqui, e as duas são da família que já custou três dias
+    em 31/07-02/08:
+
+    1. `urlopen` cru, FORA de `_passo`. `_avisar_falha` só dispara de dentro de
+       `_passo`, então uma queda do gov.br matava a cadeia antes do primeiro elo
+       essencial — sem log de falha e sem WhatsApp. Era a mesma quebra silenciosa
+       que consertamos no coletor da CGU, na única rota de rede que sobrou.
+    2. Escrita DIRETA sobre o alvo. Download interrompido deixava arquivo
+       truncado com data nova, que passava por "cache fresco" na rodada seguinte
+       e nas outras todas — falha diária permanente até alguém apagar à mão.
+
+    Agora: baixa para `.parcial`, confere que é ZIP de verdade, e só então
+    renomeia. Falha com cache antigo em disco DEGRADA (avisa e segue com o
+    velho, que é dado defasado mas real); falha sem cache nenhum INTERROMPE,
+    porque aí não há o que processar.
+    """
+    import zipfile
+
     CACHE_DETRU.mkdir(parents=True, exist_ok=True)
-    for nome in ZIPS_DETRU:
+    idade_max = IDADE_MAX_H if idade_max is None else idade_max
+    for nome in (zips or ZIPS_DETRU):
         alvo = CACHE_DETRU / nome
         idade_h = (time.time() - alvo.stat().st_mtime) / 3600 if alvo.exists() else 1e9
-        if idade_h <= IDADE_MAX_H:
+        if idade_h <= idade_max:
             _log(fh, f"detru {nome}: cache fresco ({idade_h:.1f}h) — mantido")
             continue
         _log(fh, f"detru {nome}: baixando (cache com {idade_h:.1f}h)")
-        with urllib.request.urlopen(f"{DOWNLOADS}/{nome}", timeout=300) as r, open(alvo, "wb") as out:
-            while bloco := r.read(1 << 20):
-                out.write(bloco)
+        parcial = alvo.with_name(alvo.name + ".parcial")
+        try:
+            with urllib.request.urlopen(f"{DOWNLOADS}/{nome}", timeout=300) as r,                     open(parcial, "wb") as out:
+                while bloco := r.read(1 << 20):
+                    out.write(bloco)
+            if not zipfile.is_zipfile(parcial):
+                raise OSError("baixou, mas não é um ZIP válido (resposta truncada ou de erro)")
+            parcial.replace(alvo)          # atômico: ou o antigo, ou o novo inteiro
+        except Exception as e:  # noqa: BLE001
+            parcial.unlink(missing_ok=True)
+            tem_velho = alvo.exists()
+            _log(fh, f"! detru {nome} FALHOU no download: {type(e).__name__}: {e}"
+                     + (f" — seguindo com o cache de {idade_h:.1f}h" if tem_velho
+                        else " — e NÃO existe cache anterior"))
+            if tem_velho:
+                _avisar_falha(f"download do detru ({nome})", 1, interrompeu=False)
+                continue
+            _avisar_falha(f"download do detru ({nome}) sem cache anterior", 1)
+            raise SystemExit(1)
 
 
-def _avisar_falha(nome: str, rc: int) -> None:
+def _avisar_falha(nome: str, rc: int, interrompeu: bool = True) -> None:
     """Cadeia parada = prazo sem vigilância. Falha silenciosa é o pior defeito
-    possível neste produto, então o vermelho sai do host e vai pro grupo."""
+    possível neste produto, então o vermelho sai do host.
+
+    Vai pelo canal da EQUIPE (`seriema`), nunca pelo canal do CLIENTE. Isto aqui
+    é recado interno — cita elo que quebrou e comando de journalctl —, e cliente
+    não tem o que fazer com ele nem por que saber. O canal `seriema` ganhou
+    transporte de nuvem justamente para este aviso ter por onde sair.
+
+    Importa porque, com o alerta de andamento no WhatsApp de quem opera, "não
+    chegou nada hoje" passa a ter dois sentidos — "nada mudou" e "a cadeia
+    morreu" — e só este aviso desempata. Foi o que faltou em 22/07: o banco
+    caiu, a cadeia parou no primeiro elo e ninguém soube.
+    """
+    sys.path.insert(0, str(RAIZ / "backend"))
+    # Mensagem que exagera é mensagem que se aprende a ignorar: dizer "os prazos
+    # NÃO foram recalculados" quando a cadeia seguiu queimaria o canal em uma
+    # semana — e este alarme precisa ser crível no dia em que o prazo de fato
+    # parar. Por isso o texto muda com `interrompeu`, e a chave de entrega junto:
+    # os dois casos são notícias diferentes e não podem se deduplicar entre si.
+    if interrompeu:
+        cabeca = f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc})."
+        consequencia = "Os prazos NÃO foram recalculados hoje."
+        campo = "FALHA: os prazos NÃO foram recalculados hoje"
+    else:
+        cabeca = f"🟠 Tuiú — elo *{nome}* falhou (rc={rc}); a cadeia seguiu."
+        consequencia = ("Os prazos FORAM recalculados normalmente. O que envelheceu "
+                        "foi este elo — confira antes de confiar no dado dele.")
+        campo = f"Elo {nome} falhou; prazos recalculados normalmente"
+    hoje = date.today().isoformat()
+    # a cadeia roda em container (xyOps → docker compose run cadeia); o log vive no bind mount
+    texto = f"{cabeca}\n{consequencia}\nLog: ops/logs/diario-{hoje}.log · job tuiu_diario no xyOps (:5522)"
+    # o template de andamento serve: {{3}} diz o que houve, {{4}} o que fazer
+    avisou, detalhe = _avisar(
+        texto,
+        ["Tuiú (aviso interno, não é de cliente)",
+         f"cadeia diária — elo {nome} (rc={rc})",
+         campo,
+         f"Ver o log: ops/logs/diario-{hoje}.log ou o job tuiu_diario no xyOps · {_br_hoje()}",
+         "https://tuiu.araticum.net"],
+        chave=f"cadeia-{'parou' if interrompeu else 'seguiu'}-{hoje}-{nome}")
+    if not avisou:
+        print(f"[aviso] a equipe NÃO foi avisada ({detalhe}) — a falha fica só no log "
+              f"e no job tuiu_diario do xyOps (:5522)", file=sys.stderr)
+
+
+def _br_hoje() -> str:
+    return date.today().strftime("%d/%m/%Y")
+
+
+def _conferir_entregas(fh) -> None:
+    """A Meta ACEITAR não é a mensagem CHEGAR.
+
+    `enviar` devolve um wamid assim que a API aceita, e é isso que a cadeia
+    registrava como "enviado". A recusa vem depois, pelo webhook — e foi assim
+    que três dias de produção passaram com log verde e ninguém recebendo nada
+    (a conta estava com "Business eligibility payment issue").
+
+    Aqui a falha aparece no LOG, não só no canal: o canal é justamente o que
+    está quebrado quando isto acontece.
+    """
+    sys.path.insert(0, str(RAIZ / "backend"))
+    try:
+        from app.wpp_webhook import falhas_recentes
+        falhas = falhas_recentes(26, silencioso=False)
+    except Exception as e:  # noqa: BLE001
+        _log(fh, f"! não consegui conferir os recibos de entrega: {type(e).__name__}")
+        return
+    if not falhas:
+        return
+    for f in falhas:
+        _log(fh, f"!! ENTREGA RECUSADA para {f['numero']}: {f['erro']} "
+                 f"(a API aceitou, a Meta recusou depois)")
+    n = len(falhas)
+    _log(fh, f"!! {qtd(n, 'entrega', 'entregas')} NÃO {verbo(n, 'chegou', 'chegaram')} — "
+             f"'enviado' no log acima significa apenas que a API aceitou")
+
+
+def _conferir_frescor(fh) -> None:
+    """Dado velho passando por D-1 é a falha que mais custa neste produto.
+
+    `verificar.py` já mede o frescor e escreve em `_verificacao.json`, mas o
+    resultado só ia para o log: o exit code dele olha divergência, nunca
+    frescor. Ou seja, se a carga do Transferegov atrasar, a cadeia recalcula
+    prazo em cima de ontem-retrasado, emite evento e fecha "cadeia concluída"
+    — verde, e mentindo sobre a idade do dado.
+
+    Não interrompe: prazo é data, então um snapshot atrasado ainda produz marco
+    quase certo, e parar a cadeia tiraria a vigilância do dia inteiro. O que
+    faltava era a equipe SABER. Aqui ela sabe.
+    """
+    import json
+
+    arq = RAIZ / "data" / "recortes" / date.today().isoformat() / "_verificacao.json"
+    if not arq.exists():
+        _log(fh, "! conferência sem _verificacao.json — frescor NÃO conferido hoje")
+        return
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    fresco, resumo = d.get("snapshot_fresco"), d.get("resumo") or {}
+    divergem = int(resumo.get("divergem") or 0)
+    if fresco and not divergem:
+        _log(fh, f"OK dado fresco ({d.get('data_atualizacao_api', '')[:10]}), "
+                 f"{qtd(int(resumo.get('conferem') or 0), 'conferência bate', 'conferências batem')}")
+        return
+
+    motivo = []
+    if not fresco:
+        motivo.append(f"snapshot NAO fresco (API={str(d.get('data_atualizacao_api'))[:10]}, "
+                      f"recorte={d.get('snapshot')})")
+    if divergem:
+        motivo.append(f"{qtd(divergem, 'conferência', 'conferências')} "
+                      f"{verbo(divergem, 'DIVERGE', 'DIVERGEM')} da g2 ao vivo")
+    _log(fh, "! " + " · ".join(motivo))
+    _avisar(f"⚠️ Tuiú — {' · '.join(motivo)}.\n"
+            f"A cadeia seguiu, mas o dado de hoje NÃO é D-1 confiável.",
+            ["Tuiú (aviso interno, não é de cliente)", "conferência de integridade",
+             " · ".join(motivo), "A cadeia seguiu — confira antes de agir no que saiu hoje",
+             _br_hoje()],
+            chave=f"frescor-{date.today().isoformat()}")
+
+
+def _avisar(texto: str, campos: list[str], chave: str) -> tuple[bool, str]:
+    """Manda para a EQUIPE pelo canal interno, respeitando os interruptores."""
     sys.path.insert(0, str(RAIZ / "backend"))
     try:
         from app import seriema
         from app.config import envio_externo_liberado
-
-        # respeita o interruptor: canal pausado não pode ser furado por aqui,
-        # senão a pausa vale para o cliente e não para nós
-        if not envio_externo_liberado("seriema"):
-            print("[aviso] canal seriema desligado no painel — falha só no log", file=sys.stderr)
-            return
-        if not seriema.configurado():
-            print("[aviso] seriema não configurado — falha só no log", file=sys.stderr)
-            return
-        seriema.enviar_grupo(
-            f"🔴 Tuiú — cadeia diária parou em *{nome}* (rc={rc}).\n"
-            f"Os prazos NÃO foram recalculados hoje.\n"
-            f"journalctl --user -u tuiu-diario -n 50",
-            chave_entrega=f"cadeia-falhou-{date.today().isoformat()}-{nome}",
-        )
-    except Exception as e:  # avisar nunca pode mascarar a falha original
-        print(f"[aviso] falha ao notificar: {e}", file=sys.stderr)
+        if not (envio_externo_liberado("seriema") and seriema.configurado()):
+            return False, "canal desligado ou não configurado"
+        return seriema.enviar_grupo(texto, chave_entrega=chave, parametros=campos)
+    except Exception as e:  # avisar nunca pode mascarar o que estava sendo avisado
+        return False, f"{type(e).__name__}: {e}"
 
 
 def main():
@@ -112,10 +290,22 @@ def main():
         _passo(fh, "recorte g2 (clientes da carteira)", [py, "ingest/transferegov_g2/recorte_ente.py"])
         if not args.sem_detru:
             _refresh_detru(fh)
-            _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
+            # semanal: contrato, aditivo e OBTV mudam devagar, e sao 235 MB. Sem
+        # eles o checklist do dossie fica 100% em branco (era assim ate 28/07).
+        _refresh_detru(fh, ZIPS_DOCUMENTAIS, IDADE_MAX_DOCUMENTAL_H)
+        _passo(fh, "recorte legado detru", [py, "ingest/transferegov_g2/detru_recorte.py"])
+        # NÃO essencial: é enriquecimento vindo de API de TERCEIRO (CGU). A
+        # vigília de prazo é o produto; sanção do convenente é contexto. Deixar
+        # este elo interromper entregou o controle da nossa cadeia à
+        # disponibilidade da CGU — e ela cobrou três dias em 31/07-02/08.
+        # `avisar=True` porque envelhecer calado também não serve.
         _passo(fh, "regularidade do terceiro (CEPIM/CEIS/CNEP)",
-               [py, "ingest/transparencia/coletar_regularidade.py"])
+               [py, "ingest/transparencia/coletar_regularidade.py"],
+               essencial=False, avisar=True)
         _passo(fh, "conferencia de integridade (g2 ao vivo)", [py, "ingest/transferegov_g2/verificar.py"])
+        # o passo acima MEDE o frescor; este age sobre ele. Sem isto, dado velho
+        # atravessava a cadeia inteira e saía como D-1.
+        _conferir_frescor(fh)
         _passo(fh, "motor de prazos (marcos + alertas)", [py, "backend/app/motor_prazos.py"])
         _passo(fh, "execucao financeira por convenio (mesa)", [py, "backend/app/execucao.py"])
         _passo(fh, "motor de eventos (diff de andamento)", [py, "backend/app/eventos.py"])
@@ -126,7 +316,13 @@ def main():
         # A falha aparece no log e a norma fica pendente no console.
         _passo(fh, "vigilia normativa (DOU)", [py, "ingest/normas/vigia_dou.py"],
                essencial=False)
-        _passo(fh, "notificador (outbox/webhook/whatsapp)", [py, "backend/app/notificador.py"])
+        _passo(fh, "notificador (outbox; canais só se alerta_por_evento)",
+               [py, "backend/app/notificador.py"])
+        # a TRIAGEM — uma mensagem por dia com o que exige ação, em vez de uma
+        # por evento (correção do Danilo, 27/07: o Transferegov já manda e-mail
+        # de cada mudança). Dia sem ação não envia nada.
+        _passo(fh, "resumo do dia (triagem para a equipe)", [py, "backend/app/resumo_diario.py"])
+        _conferir_entregas(fh)
         # cadência mensal: o próprio script só age no dia 1º
         _passo(fh, "relatorios do mes (se for dia 1o)", [py, "ops/relatorio_mensal.py"])
         if not args.sem_radar:
